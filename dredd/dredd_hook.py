@@ -27,7 +27,9 @@ import dredd_hooks as hooks
 
 from six import string_types
 from six.moves.collections_abc import Mapping
+from six.moves.urllib.error import HTTPError
 from six.moves.urllib.parse import parse_qs, urlencode, urlparse
+from six.moves.urllib.request import Request, urlopen
 
 import yaml
 
@@ -38,6 +40,12 @@ stash = {
     'web-username': 'testuser',
     'web-password': 'testpass',
     'api-key': '1234567890ABCDEF1234567890ABCDEF',
+}
+
+alias_fixture = {
+    'series': 'tvdb301824',
+    'name': 'TheBig',
+    'type': 'local',
 }
 
 hook_log = os.path.join(current_dir, 'hook.log')
@@ -52,6 +60,57 @@ def print(*args, **kwargs):
     with io.open(hook_log, 'a', encoding='utf-8') as fh:
         kwargs['file'] = fh
         return real_print(*args, **kwargs)
+
+
+def api_request(method, path, body=None):
+    """Perform an API request against the Dredd test server."""
+    headers = {
+        'Accept': 'application/json; charset=UTF-8',
+        'Content-Type': 'application/json',
+        'x-api-key': stash['api-key'],
+    }
+    data = None
+    if body is not None:
+        data = json.dumps(body).encode('utf-8')
+
+    request = Request('http://localhost:8081' + path, data=data, headers=headers)
+    request.get_method = lambda: method
+
+    try:
+        response = urlopen(request)
+        return response.getcode(), response.read().decode('utf-8')
+    except HTTPError as error:
+        return error.code, error.read().decode('utf-8')
+
+
+def contains_expression(value, expression):
+    """Return whether the provided expression is present in the value."""
+    if isinstance(value, string_types):
+        return value == expression
+    elif isinstance(value, Mapping):
+        return any(contains_expression(item, expression) for item in value.values())
+    elif isinstance(value, list):
+        return any(contains_expression(item, expression) for item in value)
+
+    return False
+
+
+def ensure_alias():
+    """Ensure the stashed alias exists for alias-dependent transactions."""
+    alias_id = stash.get('alias-id')
+    if alias_id:
+        status_code, _ = api_request('GET', '/api/v2/alias/{0}'.format(alias_id))
+        if status_code == 200:
+            return alias_id
+
+    status_code, response_body = api_request('POST', '/api/v2/alias', alias_fixture)
+    if status_code != 201:
+        raise RuntimeError('Unable to create alias fixture: {0}'.format(response_body))
+
+    body = json.loads(response_body)
+    stash['alias-id'] = body['id']
+    print('Prepared alias fixture {alias_id!r}'.format(alias_id=body['id']))
+    return body['id']
 
 
 @hooks.before_all
@@ -97,13 +156,16 @@ def configure_transaction(transaction):
     # Keep stash configuration in the transaction to be executed in an after hook
     transaction['x-stash'] = response.get('x-stash') or {}
 
+    request = response.get('x-request', {})
+    if contains_expression(request, "${stash['alias-id']}"):
+        ensure_alias()
+
     # Change request based on x-request configuration
     url = transaction['fullPath']
     parsed_url = urlparse(url)
     parsed_params = parse_qs(parsed_url.query)
     parsed_path = parsed_url.path
 
-    request = response.get('x-request', {})
     body = request.get('body')
     body_update = request.get('body-update')
     if body is not None:
