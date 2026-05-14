@@ -38,7 +38,7 @@ run_verbose "yarn gulp sync"
 # Normalize line endings in changed files
 changed_files=$(git status --porcelain -- $path_to_built_themes | sed s/^...//)
 for file in $changed_files; do
-    perl -pi -e 's/\r$//g' "../../$file"
+    perl -pi -e 's/\r$//' "../../$file"
 done
 
 # Keep track of the new themes size.
