@@ -220,10 +220,13 @@ export default {
         };
     },
     mounted() {
-        const { configLoaded, general, showDefaults, presetShowOptions, update } = this;
+        const { configLoaded, showDefaults, presetShowOptions, update } = this;
         this.selectedStatus = showDefaults.status;
         this.selectedStatusAfter = showDefaults.statusAfter;
-        this.selectedLanguage = general.indexerDefaultLanguage;
+        // Leave selectedLanguage null until the user (or a preset) explicitly chooses one.
+        // The downstream resolver in new-show.vue#submitForm uses it as the highest-priority
+        // value, so seeding it with the global default would mask any language passed in
+        // via providedInfo (e.g. from existing metadata).
         this.$nextTick(() => update());
 
         this.$watch(vm => [
@@ -394,14 +397,13 @@ export default {
             });
         },
         updateShowOptions(options) {
-            const { general, layout, namingForceFolders } = this;
+            const { layout, namingForceFolders } = this;
 
-            // Preserve the existing language if the options object doesn't carry one
-            // (e.g. when seeded from showDefaults, which has no language field).
+            // Only adopt a language when the source explicitly carries one (e.g. a preset).
+            // showDefaults has no language field, so leaving selectedLanguage null here lets
+            // the parent's fallback chain (providedInfo / global default) decide.
             if (options.language) {
                 this.selectedLanguage = options.language;
-            } else if (!this.selectedLanguage) {
-                this.selectedLanguage = general.indexerDefaultLanguage;
             }
             this.selectedStatus = options.status;
             this.selectedStatusAfter = options.statusAfter;
