@@ -161,6 +161,27 @@ def stash_values(transaction):
             stash[name] = value
 
 
+@hooks.before('alias > /alias > Create a new alias > 201 > application/json')
+def create_series_fixture_for_alias(transaction):
+    """Create a minimal series fixture for alias tests."""
+    from medusa import db
+
+    # Insert a minimal series record for tvdb301824
+    main_db_con = db.DBConnection()
+
+    # Check if series already exists
+    result = main_db_con.select('SELECT show_id FROM tv_shows WHERE indexer = 1 AND indexer_id = 301824')
+    if not result:
+        print('Creating series fixture tvdb301824 for alias tests')
+        main_db_con.action(
+            'INSERT INTO tv_shows '
+            '(indexer, indexer_id, show_name, location, status, paused) '
+            'VALUES (?, ?, ?, ?, ?, ?)',
+            [1, 301824, 'Test Series', '', 'Continuing', 0]
+        )
+        print('Series fixture tvdb301824 created successfully')
+
+
 def replace_url(transaction, new_url):
     """Replace with a new URL."""
     transaction['fullPath'] = new_url
