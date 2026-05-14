@@ -170,7 +170,7 @@ export default {
                     showName: '',
                     showDir: '',
                     indexerId: '',
-                    indexerLanguage: 'en',
+                    indexerLanguage: null,
                     unattended: false
                 };
             }

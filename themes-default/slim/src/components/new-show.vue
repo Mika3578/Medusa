@@ -117,7 +117,7 @@ export default {
                     showName: '',
                     showDir: '',
                     indexerId: '',
-                    indexerLanguage: 'en',
+                    indexerLanguage: null,
                     unattended: false
                 };
             }
@@ -126,6 +126,7 @@ export default {
             default() {
                 return {
                     use: false,
+                    language: null,
                     subtitles: null,
                     status: null,
                     statusAfter: null,
@@ -155,6 +156,7 @@ export default {
             selectedShow: null,
             selectedShowSlug: '',
             selectedShowOptions: {
+                language: null,
                 subtitles: null,
                 status: null,
                 statusAfter: null,
@@ -278,23 +280,20 @@ export default {
 
             // Collect all the needed form data.
             const {
+                general,
                 indexerIdToName,
-                indexerLanguage,
                 presetShowOptions,
                 providedInfo,
                 selectedRootDir,
-                selectedShow,
-                selectedShowOptions
+                selectedShow
             } = this;
 
             const showId = {};
             const options = {};
 
             if (providedInfo.use) {
-                options.language = providedInfo.indexerLanguage;
                 showId[indexerIdToName(providedInfo.indexerId)] = providedInfo.showId;
             } else {
-                options.language = indexerLanguage;
                 showId[indexerIdToName(selectedShow.indexerId)] = selectedShow.showId;
             }
 
@@ -310,6 +309,7 @@ export default {
 
             const {
                 anime,
+                language,
                 quality,
                 release,
                 scene,
@@ -318,7 +318,13 @@ export default {
                 statusAfter,
                 subtitles,
                 showLists
-            } = selectedShowOptions;
+            } = this.selectedShowOptions;
+
+            // Resolve the language with priority:
+            //   1. Explicit choice from customize options (selectedShowOptions/presetShowOptions)
+            //   2. Language provided by the parent (e.g. from existing metadata)
+            //   3. Global indexer default language from configuration
+            options.language = language || providedInfo.indexerLanguage || general.indexerDefaultLanguage;
 
             // Show options
             options.status = status;
@@ -378,6 +384,7 @@ export default {
         },
         updateOptions(options) {
             // Update selected options from add-show-options.vue @change event.
+            this.selectedShowOptions.language = options.language;
             this.selectedShowOptions.subtitles = options.subtitles;
             this.selectedShowOptions.status = options.status;
             this.selectedShowOptions.statusAfter = options.statusAfter;

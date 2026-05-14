@@ -4,6 +4,26 @@
             <div class="form-group">
                 <div class="row">
                     <div class="col-sm-2">
+                        <label for="indexerLangSelect" class="control-label">
+                            <span>Info Language</span>
+                        </label>
+                    </div>
+                    <div class="col-sm-10 content">
+                        <language-select
+                            id="indexerLangSelect"
+                            @update-language="selectedLanguage = $event"
+                            :language="selectedLanguage || general.indexerDefaultLanguage || 'en'"
+                            :available="(indexers.main && indexers.main.validLanguages || ['en']).join(',')"
+                            class="form-control form-control-inline input-sm"
+                        />
+                        <span>This only applies to episode filenames and the contents of metadata files.</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <div class="row">
+                    <div class="col-sm-2">
                         <label for="customQuality" class="control-label">
                             <span>Quality</span>
                         </label>
@@ -133,6 +153,7 @@ import { combineQualities } from '../utils/core';
 import {
     ConfigTemplate,
     ConfigToggleSlider,
+    LanguageSelect,
     QualityChooser
 } from './helpers';
 import AnidbReleaseGroupUi from './anidb-release-group-ui.vue';
@@ -144,6 +165,7 @@ export default {
         AnidbReleaseGroupUi,
         ConfigTemplate,
         ConfigToggleSlider,
+        LanguageSelect,
         Multiselect,
         QualityChooser
     },
@@ -162,6 +184,7 @@ export default {
             default() {
                 return {
                     use: false,
+                    language: null,
                     subtitles: null,
                     status: null,
                     statusAfter: null,
@@ -178,6 +201,7 @@ export default {
     data() {
         return {
             saving: false,
+            selectedLanguage: null,
             selectedStatus: null,
             selectedStatusAfter: null,
             quality: {
@@ -196,12 +220,14 @@ export default {
         };
     },
     mounted() {
-        const { configLoaded, showDefaults, presetShowOptions, update } = this;
+        const { configLoaded, general, showDefaults, presetShowOptions, update } = this;
         this.selectedStatus = showDefaults.status;
         this.selectedStatusAfter = showDefaults.statusAfter;
+        this.selectedLanguage = general.indexerDefaultLanguage;
         this.$nextTick(() => update());
 
         this.$watch(vm => [
+            vm.selectedLanguage,
             vm.selectedStatus,
             vm.selectedStatusAfter,
             vm.selectedSubtitleEnabled,
@@ -221,6 +247,8 @@ export default {
     },
     computed: {
         ...mapState({
+            general: state => state.config.general,
+            indexers: state => state.config.indexers,
             showDefaults: state => state.config.general.showDefaults,
             configLoaded: state => state.config.system.configLoaded,
             layout: state => state.config.layout,
@@ -292,6 +320,7 @@ export default {
         }),
         update() {
             const {
+                selectedLanguage,
                 selectedSubtitleEnabled,
                 selectedStatus,
                 selectedStatusAfter,
@@ -304,6 +333,7 @@ export default {
             } = this;
             this.$nextTick(() => {
                 this.$emit('change', {
+                    language: selectedLanguage,
                     subtitles: selectedSubtitleEnabled,
                     status: selectedStatus,
                     statusAfter: selectedStatusAfter,
@@ -364,8 +394,15 @@ export default {
             });
         },
         updateShowOptions(options) {
-            const { layout, namingForceFolders } = this;
+            const { general, layout, namingForceFolders } = this;
 
+            // Preserve the existing language if the options object doesn't carry one
+            // (e.g. when seeded from showDefaults, which has no language field).
+            if (options.language) {
+                this.selectedLanguage = options.language;
+            } else if (!this.selectedLanguage) {
+                this.selectedLanguage = general.indexerDefaultLanguage;
+            }
             this.selectedStatus = options.status;
             this.selectedStatusAfter = options.statusAfter;
             this.selectedSubtitleEnabled = options.subtitles;

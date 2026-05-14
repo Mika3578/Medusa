@@ -138,6 +138,7 @@ export default {
             promptForSettings: false,
             enableAnimeOptions: true,
             presetShowOptions: {
+                language: null,
                 subtitles: null,
                 status: null,
                 statusAfter: null,
@@ -160,6 +161,7 @@ export default {
     },
     computed: {
         ...mapState({
+            general: state => state.config.general,
             indexers: state => state.config.indexers,
             indexerDefault: state => state.config.general.indexerDefault,
             queueitems: state => state.shows.queueitems,
@@ -327,6 +329,7 @@ export default {
         },
         updateOptions(options) {
             // Update seleted options from add-show-options.vue @change event.
+            this.presetShowOptions.language = options.language;
             this.presetShowOptions.subtitles = options.subtitles;
             this.presetShowOptions.status = options.status;
             this.presetShowOptions.statusAfter = options.statusAfter;
@@ -345,7 +348,7 @@ export default {
          * @param {boolean} unattended - true if shows should be added without prompting for show options.
          */
         openAddNewShow(curDirIndex, unattended = false) {
-            const { addShowComponents, filteredDirList, presetShowOptions, promptForSettings } = this;
+            const { addShowComponents, filteredDirList, general, presetShowOptions, promptForSettings } = this;
 
             const curDir = filteredDirList[curDirIndex];
             const providedInfo = {
@@ -354,7 +357,7 @@ export default {
                 showName: '',
                 showDir: curDir.path,
                 indexerId: 0,
-                indexerLanguage: 'en',
+                indexerLanguage: general.indexerDefaultLanguage,
                 curDirIndex, // Add so we can return it with the matching queueitem. This allows us to keep track.
                 // If promptForSettings is enabled, negate out the unattended flag if enabled.
                 unattended: unattended && !promptForSettings // Passed as a flag, to auto add the show if enabled.
