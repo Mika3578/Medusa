@@ -105,7 +105,7 @@ def ensure_alias():
 
     status_code, response_body = api_request('POST', '/api/v2/alias', alias_fixture)
     if status_code != 201:
-        raise RuntimeError('Unable to create alias fixture: {0}'.format(response_body))
+        raise RuntimeError('Unable to create alias fixture (status {0}): {1}'.format(status_code, response_body))
 
     body = json.loads(response_body)
     stash['alias-id'] = body['id']
