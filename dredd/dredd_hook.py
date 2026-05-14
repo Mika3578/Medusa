@@ -86,7 +86,7 @@ def api_request(method, path, body=None):
 def contains_expression(value, expression):
     """Return whether the provided expression is present in the value."""
     if isinstance(value, string_types):
-        return value == expression
+        return expression in value
     elif isinstance(value, Mapping):
         return any(contains_expression(item, expression) for item in value.values())
     elif isinstance(value, list):
