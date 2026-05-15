@@ -279,10 +279,15 @@ def ensure_seeded_series():
         })
 
     deadline = time.time() + SEED_TIMEOUT_SECONDS
+    last_series_status = None
+    last_location = None
+    last_missing_episode = None
     while time.time() < deadline:
         series_status, body = call_api('GET', series_path)
+        last_series_status = series_status
         series_data = body.get('data') if isinstance(body, Mapping) else None
         location = series_data.get('config', {}).get('location') if isinstance(series_data, Mapping) else None
+        last_location = location
         if series_status == 200 and location and os.path.isdir(location):
             episodes_ready = True
             for episode_slug in SEEDED_EPISODES:
@@ -290,6 +295,7 @@ def ensure_seeded_series():
                     'GET', '/series/{slug}/episodes/{episode}'.format(slug=SEEDED_SERIES_SLUG, episode=episode_slug)
                 )
                 if episode_status != 200:
+                    last_missing_episode = episode_slug
                     episodes_ready = False
                     break
 
@@ -300,8 +306,15 @@ def ensure_seeded_series():
         time.sleep(1)
 
     raise RuntimeError(
-        'Seeded series {slug} was not ready after {timeout}s'.format(
-            slug=SEEDED_SERIES_SLUG, timeout=SEED_TIMEOUT_SECONDS
+        (
+            'Seeded series {slug} was not ready after {timeout}s '
+            '(series_status={series_status}, location={location!r}, missing_episode={missing_episode})'
+        ).format(
+            slug=SEEDED_SERIES_SLUG,
+            timeout=SEED_TIMEOUT_SECONDS,
+            series_status=last_series_status,
+            location=last_location,
+            missing_episode=last_missing_episode
         )
     )
 
