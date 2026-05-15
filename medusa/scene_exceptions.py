@@ -63,7 +63,8 @@ def refresh_exceptions_cache(series_obj=None):
     for exception in exceptions:
         indexer = int(exception['indexer'])
         series_id = int(exception['series_id'])
-        season = int(exception['season'])
+        # Handle None season - skip or default to -1 for all seasons
+        season = int(exception['season']) if exception['season'] is not None else -1
         title = exception['title']
         custom = bool(exception['custom'])
 
