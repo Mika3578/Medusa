@@ -694,7 +694,8 @@ class Series(TV):
         self._aliases = set(chain(*itervalues(get_all_scene_exceptions(self))))
 
         # If we added or removed aliases, we need to make sure these are reflected in the search templates.
-        self._search_templates.templates = self._search_templates.generate()
+        if self._search_templates is not None:
+            self._search_templates.templates = self._search_templates.generate()
         build_name_cache(self)
 
     @property
@@ -2583,11 +2584,15 @@ class Series(TV):
     @property
     def search_templates(self):
         """Return the search templates for this show."""
+        if self._search_templates is None:
+            self.init_search_templates()
         self._search_templates.read_from_db()
         return self._search_templates
 
     @search_templates.setter
     def search_templates(self, templates):
+        if self._search_templates is None:
+            self.init_search_templates()
         self._search_templates.update(templates)
 
     def want_episode(self, season, episode, quality,
