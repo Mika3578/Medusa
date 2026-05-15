@@ -190,12 +190,14 @@ def seed_test_series():
     from medusa import app
     from medusa.tv.series import Series
     from medusa.tv.episode import Episode
+    from medusa.show.show import Show
 
     print('Seeding test series tvdb301824...')
 
     try:
-        # Check if series already exists
-        existing_series = Series.find_by_identifier(Series.SeriesIdentifier.from_slug('tvdb301824'))
+        # Check if series already exists in app.showList
+        # indexer=1 is TVDB, series_id=301824
+        existing_series = Show.find_by_id(app.showList, 1, 301824)
         if existing_series:
             print('Test series tvdb301824 already exists, skipping seed')
             return
