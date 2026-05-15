@@ -287,3 +287,54 @@ class TestSearchTemplates(object):
         assert result is not None
         default_templates = [t for t in result if t.default and t.title == 'NoSceneExceptionForThis']
         assert len(default_templates) == 0
+
+    def test_search_templates_property_initializes_if_none(self, create_tvshow):
+        """Test that search_templates property initializes _search_templates if None."""
+        show = create_tvshow(indexerid=2, indexer=1, name='Test Show 2', anime=False)
+
+        # Don't call init_search_templates() manually
+        # The property should handle initialization
+
+        # Access search_templates property
+        templates = show.search_templates
+
+        # Verify that templates were initialized
+        assert templates is not None
+        assert show._search_templates is not None
+        assert hasattr(templates, 'templates')
+
+    def test_provider_can_access_search_templates(self, setup_search_templates):
+        """Test that provider code can access search_templates.templates."""
+        show = setup_search_templates
+
+        # Create a custom template
+        custom_template = {
+            'template': 'ProviderTest S%0SE%0E',
+            'title': 'Test Show',
+            'season': -1,
+            'enabled': True,
+            'default': False,
+            'seasonSearch': False
+        }
+
+        # Save the custom template
+        show.search_templates.save(custom_template)
+
+        # Simulate provider code accessing templates
+        # This is how generic_provider.py accesses templates
+        templates_list = show.search_templates.templates
+
+        # Verify templates are accessible
+        assert templates_list is not None
+        assert isinstance(templates_list, list)
+        assert len(templates_list) > 0
+
+        # Verify we can iterate and access template properties
+        for template in templates_list:
+            assert hasattr(template, 'template')
+            assert hasattr(template, 'title')
+            assert hasattr(template, 'season')
+            assert hasattr(template, 'enabled')
+            assert hasattr(template, 'default')
+            assert hasattr(template, 'season_search')
+
