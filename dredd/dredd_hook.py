@@ -9,6 +9,7 @@ import io
 import json
 import os
 import sys
+import time
 
 try:
     from builtins import print as real_print
@@ -28,11 +29,17 @@ import dredd_hooks as hooks
 from six import string_types
 from six.moves.collections_abc import Mapping
 from six.moves.urllib.parse import parse_qs, urlencode, urlparse
+from six.moves.urllib.error import HTTPError, URLError
+from six.moves.urllib.request import Request, urlopen
 
 import yaml
 
 
 api_description = None
+SEEDED_SERIES_ID = 301824
+SEEDED_SERIES_SLUG = 'tvdb301824'
+SEEDED_EPISODES = ('s01e01', 's01e02')
+SEED_TIMEOUT_SECONDS = 180
 
 stash = {
     'web-username': 'testuser',
@@ -148,6 +155,24 @@ def configure_transaction(transaction):
 
         replace_url(transaction, new_url)
 
+    if method == 'POST' and path == base_path + '/series' and status_code == 201:
+        show_dir = ensure_seed_directory()
+        try:
+            series_body = json.loads(transaction['request']['body'])
+        except ValueError:
+            series_body = {}
+
+        if not isinstance(series_body, Mapping):
+            series_body = {}
+
+        options = series_body.get('options') or {}
+        options['showDir'] = show_dir
+        series_body['options'] = options
+        transaction['request']['body'] = json.dumps(series_body)
+
+    if transaction_depends_on_seeded_series(transaction, base_path):
+        ensure_seeded_series()
+
 
 @hooks.after_each
 def stash_values(transaction):
@@ -166,6 +191,119 @@ def replace_url(transaction, new_url):
     transaction['fullPath'] = new_url
     transaction['request']['uri'] = new_url
     transaction['id'] = transaction['request']['method'] + ' ' + new_url
+
+
+def ensure_seed_directory():
+    """Ensure a seed show directory exists for dredd api tests."""
+    show_root = os.path.join(current_dir, 'data', 'shows')
+    if not os.path.isdir(show_root):
+        os.makedirs(show_root)
+
+    show_dir = os.path.join(show_root, SEEDED_SERIES_SLUG)
+    if not os.path.isdir(show_dir):
+        os.makedirs(show_dir)
+
+    stash['show-dir'] = show_dir
+    return show_dir
+
+
+class MethodRequest(Request):
+    """Request subclass compatible with python2/3 custom methods."""
+
+    def __init__(self, *args, **kwargs):
+        self._method = kwargs.pop('method', None)
+        Request.__init__(self, *args, **kwargs)
+
+    def get_method(self):
+        """Return http method."""
+        if self._method:
+            return self._method
+        return Request.get_method(self)
+
+
+def call_api(method, path, body=None):
+    """Call api endpoint and return status code and parsed body."""
+    url = 'http://localhost:8081{base_path}{path}'.format(base_path=api_description['basePath'], path=path)
+    data = json.dumps(body).encode('utf-8') if body is not None else None
+    request = MethodRequest(url, data=data, method=method)
+    request.add_header('Content-Type', 'application/json')
+    request.add_header('x-api-key', stash['api-key'])
+
+    try:
+        response = urlopen(request, timeout=5)
+        status = response.getcode()
+        raw_body = response.read()
+    except HTTPError as error:
+        status = error.code
+        raw_body = error.read()
+    except URLError as error:
+        print('Unable to call {method} {url}: {error!r}'.format(method=method, url=url, error=error))
+        return None, None
+
+    if isinstance(raw_body, bytes):
+        raw_body = raw_body.decode('utf-8')
+
+    parsed_body = None
+    if raw_body:
+        try:
+            parsed_body = json.loads(raw_body)
+        except ValueError:
+            parsed_body = raw_body
+
+    return status, parsed_body
+
+
+def transaction_depends_on_seeded_series(transaction, base_path):
+    """Check if transaction needs seeded tvdb301824."""
+    if transaction['request']['method'] == 'POST' and transaction['origin']['resourceName'] == base_path + '/series':
+        return False
+
+    transaction_uri = transaction['request'].get('uri', '')
+    transaction_body = transaction['request'].get('body', '') or ''
+    return SEEDED_SERIES_SLUG in transaction_uri or SEEDED_SERIES_SLUG in transaction_body
+
+
+def ensure_seeded_series():
+    """Ensure the seeded series exists and has required episodes."""
+    if stash.get('seeded-series-ready'):
+        return
+
+    show_dir = ensure_seed_directory()
+    series_path = '/series/{slug}'.format(slug=SEEDED_SERIES_SLUG)
+
+    status, _ = call_api('GET', series_path)
+    if status == 404:
+        call_api('POST', '/series', {
+            'id': {'tvdb': SEEDED_SERIES_ID},
+            'options': {'showDir': show_dir}
+        })
+
+    deadline = time.time() + SEED_TIMEOUT_SECONDS
+    while time.time() < deadline:
+        series_status, body = call_api('GET', series_path)
+        series_data = body.get('data') if isinstance(body, Mapping) else None
+        location = series_data.get('config', {}).get('location') if isinstance(series_data, Mapping) else None
+        if series_status == 200 and location and os.path.isdir(location):
+            episodes_ready = True
+            for episode_slug in SEEDED_EPISODES:
+                episode_status, _ = call_api(
+                    'GET', '/series/{slug}/episodes/{episode}'.format(slug=SEEDED_SERIES_SLUG, episode=episode_slug)
+                )
+                if episode_status != 200:
+                    episodes_ready = False
+                    break
+
+            if episodes_ready:
+                stash['seeded-series-ready'] = True
+                return
+
+        time.sleep(1)
+
+    raise RuntimeError(
+        'Seeded series {slug} was not ready after {timeout}s'.format(
+            slug=SEEDED_SERIES_SLUG, timeout=SEED_TIMEOUT_SECONDS
+        )
+    )
 
 
 def evaluate(expression, context=None):
