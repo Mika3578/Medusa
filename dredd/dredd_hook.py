@@ -65,6 +65,9 @@ def order_and_load_api_description(transactions):
     with io.open(transactions[0]['origin']['filename'], 'rb') as stream:
         api_description = yaml.safe_load(stream)
 
+    # Seed test data: Create test series tvdb301824
+    seed_test_series()
+
 
 @hooks.before_each
 def configure_transaction(transaction):
@@ -183,6 +186,57 @@ def evaluate(expression, context=None):
             expression[i] = evaluate(value, context=context)
 
     return expression
+
+
+def seed_test_series():
+    """Seed test series tvdb301824 with required episodes."""
+    from medusa import app
+    from medusa.tv.series import Series
+    from medusa.tv.episode import Episode
+
+    print('Seeding test series tvdb301824...')
+
+    # Create the show directory
+    data_dir = os.path.join(current_dir, 'data')
+    show_dir = os.path.join(data_dir, 'shows', 'Test Show')
+    if not os.path.exists(show_dir):
+        os.makedirs(show_dir)
+
+    # Create test series with TVDB ID 301824
+    try:
+        series = Series(1, 301824, 'en')  # 1 = TVDB indexer
+        series.name = 'Test Show'
+        series.location = show_dir
+        series.network = 'Test Network'
+        series.genre = 'Drama'
+        series.runtime = 60
+        series.status = 'Continuing'
+        series.default_ep_status = 5  # WANTED
+        series.airs = 'Monday'
+        series.start_year = 2020
+        series.paused = 0
+
+        # Save series to database
+        series.save_to_db()
+
+        # Add series to app.showList
+        app.showList = [series]
+
+        print('Created test series: {0} (tvdb301824) at {1}'.format(series.name, series.location))
+
+        # Create test episodes s01e01 and s01e02
+        for ep_num in [1, 2]:
+            episode = Episode(series, 1, ep_num)
+            episode.name = 'Episode {0}'.format(ep_num)
+            episode.status = 5  # WANTED
+            episode.save_to_db()
+            print('Created episode s01e{0:02d}'.format(ep_num))
+
+        print('Test series seeding completed successfully')
+    except Exception as error:
+        print('Error seeding test series: {0}'.format(error))
+        import traceback
+        traceback.print_exc()
 
 
 def start():
