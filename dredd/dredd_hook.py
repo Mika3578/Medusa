@@ -65,9 +65,6 @@ def order_and_load_api_description(transactions):
     with io.open(transactions[0]['origin']['filename'], 'rb') as stream:
         api_description = yaml.safe_load(stream)
 
-    # Seed test data: Create test series tvdb301824
-    seed_test_series()
-
 
 @hooks.before_each
 def configure_transaction(transaction):
@@ -189,21 +186,27 @@ def evaluate(expression, context=None):
 
 
 def seed_test_series():
-    """Seed test series tvdb301824 with required episodes."""
+    """Seed test series tvdb301824 with required episodes (idempotent)."""
     from medusa import app
     from medusa.tv.series import Series
     from medusa.tv.episode import Episode
 
     print('Seeding test series tvdb301824...')
 
-    # Create the show directory
-    data_dir = os.path.join(current_dir, 'data')
-    show_dir = os.path.join(data_dir, 'shows', 'Test Show')
-    if not os.path.exists(show_dir):
-        os.makedirs(show_dir)
-
-    # Create test series with TVDB ID 301824
     try:
+        # Check if series already exists
+        existing_series = Series.find_by_identifier(Series.SeriesIdentifier.from_slug('tvdb301824'))
+        if existing_series:
+            print('Test series tvdb301824 already exists, skipping seed')
+            return
+
+        # Create the show directory
+        data_dir = os.path.join(current_dir, 'data')
+        show_dir = os.path.join(data_dir, 'shows', 'Test Show')
+        if not os.path.exists(show_dir):
+            os.makedirs(show_dir)
+
+        # Create test series with TVDB ID 301824
         series = Series(1, 301824, 'en')  # 1 = TVDB indexer
         series.name = 'Test Show'
         series.location = show_dir
@@ -219,18 +222,23 @@ def seed_test_series():
         # Save series to database
         series.save_to_db()
 
-        # Add series to app.showList
-        app.showList = [series]
+        # Add series to app.showList without replacing existing shows
+        if series not in app.showList:
+            app.showList.append(series)
 
         print('Created test series: {0} (tvdb301824) at {1}'.format(series.name, series.location))
 
-        # Create test episodes s01e01 and s01e02
+        # Create test episodes s01e01 and s01e02 if missing
         for ep_num in [1, 2]:
-            episode = Episode(series, 1, ep_num)
-            episode.name = 'Episode {0}'.format(ep_num)
-            episode.status = 5  # WANTED
-            episode.save_to_db()
-            print('Created episode s01e{0:02d}'.format(ep_num))
+            existing_episode = series.get_episode(1, ep_num, no_create=True)
+            if not existing_episode:
+                episode = Episode(series, 1, ep_num)
+                episode.name = 'Episode {0}'.format(ep_num)
+                episode.status = 5  # WANTED
+                episode.save_to_db()
+                print('Created episode s01e{0:02d}'.format(ep_num))
+            else:
+                print('Episode s01e{0:02d} already exists'.format(ep_num))
 
         print('Test series seeding completed successfully')
     except Exception as error:
@@ -267,6 +275,9 @@ def start():
     from medusa.__main__ import Application
     application = Application()
     application.start(args)
+
+    # Seed test data after application has started
+    seed_test_series()
 
 
 if __name__ == '__main__':
