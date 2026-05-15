@@ -39,7 +39,8 @@ api_description = None
 SEEDED_SERIES_ID = 301824
 SEEDED_SERIES_SLUG = 'tvdb301824'
 SEEDED_EPISODES = ('s01e01', 's01e02')
-SEED_TIMEOUT_SECONDS = 180
+SEED_TIMEOUT_SECONDS = int(os.environ.get('DREDD_SEED_TIMEOUT_SECONDS', '180'))
+API_REQUEST_TIMEOUT_SECONDS = int(os.environ.get('DREDD_API_REQUEST_TIMEOUT_SECONDS', '5'))
 
 stash = {
     'web-username': 'testuser',
@@ -230,7 +231,7 @@ def call_api(method, path, body=None):
     request.add_header('x-api-key', stash['api-key'])
 
     try:
-        response = urlopen(request, timeout=5)
+        response = urlopen(request, timeout=API_REQUEST_TIMEOUT_SECONDS)
         status = response.getcode()
         raw_body = response.read()
     except HTTPError as error:
@@ -279,9 +280,9 @@ def ensure_seeded_series():
         })
 
     deadline = time.time() + SEED_TIMEOUT_SECONDS
-    last_series_status = None
-    last_location = None
-    last_missing_episode = None
+    last_series_status = 'not_checked'
+    last_location = 'not_checked'
+    last_missing_episode = 'not_checked'
     while time.time() < deadline:
         series_status, body = call_api('GET', series_path)
         last_series_status = series_status
