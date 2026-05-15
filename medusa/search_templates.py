@@ -60,12 +60,14 @@ class SearchTemplates(object):
     def _clean(self):
         """Clean up templates when there is no scene exception for it anymore."""
         # Get the default title search string for Episode and Season
+        # Only clean up default templates (default = 1), never remove custom templates
         self.main_db_con.action("""
             DELETE from search_templates
             WHERE indexer = ?
             AND series_id = ?
             AND title not in (select title from scene_exceptions where indexer = ? and series_id = ?)
             AND title != ?
+            AND `default` = 1
         """, [
             self.show_obj.indexer, self.show_obj.series_id,
             self.show_obj.indexer, self.show_obj.series_id,
@@ -136,7 +138,7 @@ class SearchTemplates(object):
             'indexer': self.show_obj.indexer,
             'series_id': self.show_obj.series_id,
             'season': template['season'],
-            '`default`': template['default'],
+            '`default`': template.get('default', False),
             'enabled': template['enabled'],
             'season_search': template['seasonSearch']
         }
@@ -272,16 +274,22 @@ class SearchTemplates(object):
         self.remove_custom()
         for template in templates:
             # TODO: add validation
-            # Check if the scene exception still exists in db
-            find_scene_exception = self.main_db_con.select(
-                'SELECT season, title '
-                'FROM scene_exceptions '
-                'WHERE indexer = ? AND series_id = ? '
-                'AND title = ? AND season = ?',
-                [self.show_obj.indexer, self.show_obj.series_id, template['title'], template['season']]
-            )
-            if not find_scene_exception and template['title'] != self.show_obj.name:
-                continue
+            # Use defensive handling for missing 'default' value
+            is_default = template.get('default', False)
+
+            # Only validate scene exceptions for default templates
+            # Custom templates (default = 0 or False) should always be saved
+            if is_default:
+                # Check if the scene exception still exists in db
+                find_scene_exception = self.main_db_con.select(
+                    'SELECT season, title '
+                    'FROM scene_exceptions '
+                    'WHERE indexer = ? AND series_id = ? '
+                    'AND title = ? AND season = ?',
+                    [self.show_obj.indexer, self.show_obj.series_id, template['title'], template['season']]
+                )
+                if not find_scene_exception and template['title'] != self.show_obj.name:
+                    continue
 
             # Save to db
             self.save(template)
@@ -294,7 +302,7 @@ class SearchTemplates(object):
                 series=self.show_obj,
                 season=template['season'],
                 enabled=template['enabled'],
-                default=template['default'],
+                default=is_default,
                 season_search=template['seasonSearch']
             )
 
