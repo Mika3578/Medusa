@@ -367,7 +367,10 @@ def _patch_dredd_test_server():
 
     def not_found_with_string_error(self, error='Resource not found'):
         if isinstance(error, Exception):
-            error = str(error) or error.args[0]
+            error_message = str(error)
+            if not error_message and getattr(error, 'args', None):
+                error_message = error.args[0]
+            error = error_message or 'Resource not found'
         return original_not_found(self, error)
 
     BaseRequestHandler._not_found = not_found_with_string_error
