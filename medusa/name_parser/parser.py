@@ -65,9 +65,10 @@ class NameParser(object):
             [result.series.indexer, result.series.series_id, airdate.toordinal()])
 
         # Month-only scene releases (Mai.2016, 05.2016, ...) do not include the
-        # broadcast day. Day=1 on the guessed date is only a placeholder — shows
-        # like Le Journal du Hard air on the first Saturday of the month.
-        # Resolve by year+month when precision is month.
+        # broadcast day. Day=1 on the guessed date is only a placeholder — the
+        # real episode often airs later in the month.
+        # Prefer year+month when precision is month; also fall back to a month
+        # range when an exact day-1 lookup misses (legacy/placeholder dates).
         month_precision = getattr(result, 'date_precision', None) == 'month'
         if month_precision or (not sql_result and airdate.day == 1):
             from medusa.helper.month_names import month_date_range

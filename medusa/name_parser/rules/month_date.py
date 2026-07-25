@@ -60,12 +60,14 @@ _TITLE_MONTH_RE = re.compile(
 
 # Month name + year anywhere in the release (spaces or dots), e.g.
 # "Le Journal du Hard Mars 2012 JDH 03 2012" or "Show Name Mai 2016 ..."
-# Require a non-alnum boundary so short tokens like "bre" do not match inside
-# "cembre" (truncated Décembre display glitch).
-# Trailing boundary is any non-alnum so "(Avril-2021)" works (')' after year).
+# Require a non-letter/digit boundary so short tokens like "bre" do not match
+# inside "cembre" (truncated Décembre display glitch). Use Unicode-aware
+# letter/digit classes ([^\W_]) so Cyrillic/CJK month names are not glued to
+# adjacent letters; '_' remains a valid separator.
+# Trailing boundary is end or non-letter/digit so "(Avril-2021)" works.
 _INPUT_MONTH_YEAR_RE = re.compile(
-    r'(?<![A-Za-z0-9])(?P<month>' + _MONTH_NAMES_PATTERN + r')[\s._-]+(?P<year>(?:19|20)\d{2})'
-    r'(?:$|[^A-Za-z0-9])',
+    r'(?<![^\W_])(?P<month>' + _MONTH_NAMES_PATTERN + r')[\s._-]+(?P<year>(?:19|20)\d{2})'
+    r'(?:$|[\W_])',
     re.IGNORECASE,
 )
 

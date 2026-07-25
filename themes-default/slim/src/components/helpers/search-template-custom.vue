@@ -85,7 +85,7 @@
                             <code>%0M-%y</code> (05-16),
                             <code>%0M.%Y</code> (05.2016),
                             <code>%Y.%0M</code> (2016.05),
-                            <code>%A-D</code> (2016-05-01).
+                            <code>%A-D</code> (actual airdate, e.g. 2016-05-07).
                             <code>%MM</code>/<code>%Mm</code> use the show language.
                         </p>
                     </div>
