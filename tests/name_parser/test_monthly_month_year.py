@@ -135,6 +135,9 @@ DASH_MONTH_YEAR_CASES = [
     ('JDH-03-24', date(2024, 3, 1), 'JDH'),
     ('JDH-04-24-720p', date(2024, 4, 1), 'JDH'),
     ('Le journal du hard 09-24', date(2024, 9, 1), 'Le journal du hard'),
+    # Dot-separated MM.YY (year > 12) — same as dash form
+    ('Le.journal.du.hard.09.24', date(2024, 9, 1), 'Le journal du hard'),
+    ('Le.journal.du.hard.09.24.mkv', date(2024, 9, 1), 'Le journal du hard'),
     # Compact JDH tags: title must not swallow the month digits
     ('JDH04-2022', date(2022, 4, 1), 'JDH'),
     ('JDH09-21', date(2021, 9, 1), 'JDH'),

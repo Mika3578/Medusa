@@ -98,12 +98,15 @@ _NUMERIC_MONTH_YEAR_RE = re.compile(
     r'(?:[^0-9]|$)'
 )
 
-# Dash-only MM-YY (2-digit year). Dots are excluded so weak pairs like
-# "Show.Name.09.10" stay episodes, not month/year.
+# MM-YY (dash) or MM.YY (dot, 2-digit year). Trailing for dots rejects another
+# dotted number (show titles like 11.22.63) but still allows .mkv extensions.
 _NUMERIC_MONTH_SHORT_YEAR_RE = re.compile(
     r'(?:^|(?<![0-9A-Za-z_]))'
-    r'(?P<month>0?[1-9]|1[0-2])-(?P<year>\d{2})'
-    r'(?:$|[^0-9])'
+    r'(?:'
+    r'(?P<month>0?[1-9]|1[0-2])-(?P<year>\d{2})(?:$|[^0-9])'
+    r'|'
+    r'(?P<month_dot>0?[1-9]|1[0-2])\.(?P<year_dot>\d{2})(?:$|[^0-9.]|\.[A-Za-z])'
+    r')'
 )
 
 
@@ -441,24 +444,32 @@ class CreateDateFromMonthYearRelease(Rule):
                     )
                     return _safe_removes(matches, to_remove), to_append
 
-        # --- Pattern 2b: dash-only MM-YY (2-digit year) -----------------------
-        # guessit often turns "09-24" into an episode range; allow past anime
-        # absolute tags. Real SxxExx still blocked. Dot pairs (09.10) excluded
-        # by the regex.
-        # Years 01-12 are ambiguous with episode ranges (02-03, 1-12) — skip
-        # those here; JDH-prefixed packs still use pattern 0b.
+        # --- Pattern 2b: MM-YY / MM.YY (2-digit year) -------------------------
+        # guessit often turns "09-24" / "09.24" into an episode or range.
+        # Real SxxExx still blocked per segment. Years 01-12 stay ambiguous
+        # with episode ranges (02-03, 09.10) — skip those; JDH tags use 0b.
         offset, segment, short = _search_segments(
             _NUMERIC_MONTH_SHORT_YEAR_RE, segments, sxxexx_matches,
             allow_sxxexx=season_looks_like_year,
         )
         if short:
-            month = int(short.group('month'))
-            year_token = short.group('year')
+            if short.group('year_dot') is not None:
+                month = int(short.group('month_dot'))
+                year_token = short.group('year_dot')
+                # Dots: require YY >= 16 so episode pairs (12.13, 09.10) stay intact.
+                min_yy = 16
+                span_month, span_year = 'month_dot', 'year_dot'
+            else:
+                month = int(short.group('month'))
+                year_token = short.group('year')
+                # Dashes: YY > 12 (packs like 09-24).
+                min_yy = 13
+                span_month, span_year = 'month', 'year'
             year = _parse_year(year_token)
             if (
                 year is not None
                 and _is_valid_year(year)
-                and int(year_token) > 12
+                and int(year_token) >= min_yy
             ):
                 to_remove.extend(seasons or [])
                 to_remove.extend(episodes or [])
@@ -466,8 +477,8 @@ class CreateDateFromMonthYearRelease(Rule):
                 to_remove.extend(absolute_episodes)
                 self._append_month_precision_date(
                     to_append,
-                    offset + short.start('month'),
-                    offset + short.end('year'),
+                    offset + short.start(span_month),
+                    offset + short.end(span_year),
                     year,
                     month,
                     input_string,
