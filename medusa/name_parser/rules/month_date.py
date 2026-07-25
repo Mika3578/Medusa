@@ -85,14 +85,15 @@ _MONTH_ONLY_RE = re.compile(
 )
 
 # Numeric monthly packs: MM.YYYY or YYYY.MM with 1 or 2 digit months.
+# Optional spaces around separators cover "(2009 - 10)" style packs.
 # Lookbehind blocks letters/digits/underscore so "Vol_1-2019" and "E02.2010" stay intact.
 # Parenthesized years like "07.(2016)" do not match because '(' is not a date separator.
 _NUMERIC_MONTH_YEAR_RE = re.compile(
     r'(?:^|(?<![0-9A-Za-z_]))'
     r'(?:'
-    r'(?P<m1>0?[1-9]|1[0-2])[._-](?P<y1>(?:19|20)\d{2})'
+    r'(?P<m1>0?[1-9]|1[0-2])\s*[._-]\s*(?P<y1>(?:19|20)\d{2})'
     r'|'
-    r'(?P<y2>(?:19|20)\d{2})[._-](?P<m2>0?[1-9]|1[0-2])'
+    r'(?P<y2>(?:19|20)\d{2})\s*[._-]\s*(?P<m2>0?[1-9]|1[0-2])'
     r')'
     r'(?:[^0-9]|$)'
 )

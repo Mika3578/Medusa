@@ -177,6 +177,8 @@ DASH_MONTH_YEAR_CASES = [
         date(2023, 3, 1),
         'Le journal du hard',
     ),
+    # Spaced separators inside parentheses (year - month)
+    ('Le Journal Du Hard (2009 - 10).avi', date(2009, 10, 1), 'Le Journal Du Hard'),
 ]
 
 
