@@ -162,6 +162,45 @@ def _safe_removes(matches, match_list):
     return safe
 
 
+def _path_segments(input_string):
+    """Split a release name into path segments, closest to the file first.
+
+    Library items are parsed as full paths, so the month/year token and a
+    season folder can live in different segments.
+    """
+    segments = []
+    start = 0
+    for index, char in enumerate(input_string or ''):
+        if char in '\\/':
+            if index > start:
+                segments.append((start, input_string[start:index]))
+            start = index + 1
+    if input_string and start < len(input_string):
+        segments.append((start, input_string[start:]))
+    return list(reversed(segments))
+
+
+def _segment_has_sxxexx(sxxexx_matches, offset, segment):
+    end = offset + len(segment)
+    return any(match.start < end and match.end > offset for match in sxxexx_matches)
+
+
+def _search_segments(regex, segments, sxxexx_matches, allow_sxxexx=False):
+    """Search segments for a month/year pattern, skipping SxxExx segments.
+
+    A season folder (Show S35/Show 01-2026.mkv) must not prevent the file name
+    from being read as a monthly release, so SxxExx only blocks the segment it
+    belongs to.
+    """
+    for offset, segment in segments:
+        if not allow_sxxexx and _segment_has_sxxexx(sxxexx_matches, offset, segment):
+            continue
+        found = regex.search(segment)
+        if found:
+            return offset, segment, found
+    return None, None, None
+
+
 class CreateDateFromMonthYearRelease(Rule):
     """Create a date from MonthName.YYYY or MM.YYYY / YYYY.MM monthly releases.
 
@@ -234,10 +273,12 @@ class CreateDateFromMonthYearRelease(Rule):
         seasons = matches.named('season')
         episodes = matches.named('episode')
         absolute_episodes = matches.named('absolute_episode') or []
-        has_sxxexx = any(
-            'SxxExx' in (match.tags or [])
+        sxxexx_matches = [
+            match
             for match in (seasons or []) + (episodes or [])
-        )
+            if 'SxxExx' in (match.tags or [])
+        ]
+        segments = _path_segments(input_string)
         # Dash monthly packs like "(02-2021)" / "07-2025" are mis-parsed by
         # guessit as SxxExx with a season equal to the year (season=2021,
         # episode=2). A season whose value is a plausible year is the tell:
@@ -256,80 +297,77 @@ class CreateDateFromMonthYearRelease(Rule):
         # Handles space-separated names and packs with trailing junk / JDH tags,
         # e.g. "Le Journal du Hard Mars 2012 JDH 03 2012 avi"
         # Truncated display glitches (Ao/cembre/vrier) are intentionally ignored.
-        if input_string and not has_sxxexx:
-            named = _INPUT_MONTH_YEAR_RE.search(input_string)
-            if named:
-                month = month_from_name(named.group('month'))
-                year = int(named.group('year'))
-                if month and _is_valid_year(year):
-                    to_remove.extend(years or [])
-                    to_remove.extend(seasons or [])
-                    to_remove.extend(episodes or [])
-                    to_remove.extend(absolute_episodes)
-                    if titles:
-                        # Keep title text before the month token when possible.
-                        # Drop any directory components so full paths do not
-                        # leak into the title (\\server\...\Show\Show Name).
-                        prefix = input_string[:named.start('month')]
-                        prefix = re.split(r'[\\/]', prefix)[-1]
-                        # Drop leading bracketed release tags: [CANAL+], [JDH], ...
-                        prefix = re.sub(r'^\s*(?:[\[(][^\])]*[\])][\s._-]*)+', '', prefix)
-                        # Drop a redundant numeric year/month right before the
-                        # month name (…2022.07.Juillet.2022…)
-                        prefix = re.sub(r'(?:19|20)\d{2}[\s._-]+\d{1,2}[\s._-]*$', '', prefix)
-                        prefix = prefix.strip(' .-_([')
-                        if prefix:
-                            cleaned = re.sub(r'[\s._-]+', ' ', prefix).strip(' .-_([')
-                            if cleaned:
-                                new_title = copy.copy(titles[0])
-                                new_title.value = cleaned
-                                to_remove.extend(titles)
-                                to_append.append(new_title)
+        offset, segment, named = _search_segments(_INPUT_MONTH_YEAR_RE, segments, sxxexx_matches)
+        if named:
+            month = month_from_name(named.group('month'))
+            year = int(named.group('year'))
+            if month and _is_valid_year(year):
+                to_remove.extend(years or [])
+                to_remove.extend(seasons or [])
+                to_remove.extend(episodes or [])
+                to_remove.extend(absolute_episodes)
+                if titles:
+                    # Keep title text before the month token, taken from the
+                    # matched segment so directory components of a full path
+                    # do not leak into the title.
+                    prefix = segment[:named.start('month')]
+                    # Drop leading bracketed release tags: [CANAL+], [JDH], ...
+                    prefix = re.sub(r'^\s*(?:[\[(][^\])]*[\])][\s._-]*)+', '', prefix)
+                    # Drop a redundant numeric year/month right before the
+                    # month name (…2022.07.Juillet.2022…)
+                    prefix = re.sub(r'(?:19|20)\d{2}[\s._-]+\d{1,2}[\s._-]*$', '', prefix)
+                    prefix = prefix.strip(' .-_([')
+                    if prefix:
+                        cleaned = re.sub(r'[\s._-]+', ' ', prefix).strip(' .-_([')
+                        if cleaned:
+                            new_title = copy.copy(titles[0])
+                            new_title.value = cleaned
+                            to_remove.extend(titles)
+                            to_append.append(new_title)
 
-                    self._append_month_precision_date(
-                        to_append,
-                        named.start('month'),
-                        named.end('year'),
-                        year,
-                        month,
-                        input_string,
-                    )
-                    return _safe_removes(matches, to_remove), to_append
+                self._append_month_precision_date(
+                    to_append,
+                    offset + named.start('month'),
+                    offset + named.end('year'),
+                    year,
+                    month,
+                    input_string,
+                )
+                return _safe_removes(matches, to_remove), to_append
 
         # --- Pattern 0b: JDH MM YYYY / MM-YY / JDH122022 scene tags ------------
-        if input_string and not has_sxxexx:
-            jdh = _JDH_MONTH_YEAR_RE.search(input_string)
-            if jdh:
-                month = int(jdh.group('month'))
-                year = _parse_year(jdh.group('year'))
-                if year is not None and _is_valid_year(year):
-                    to_remove.extend(years or [])
-                    to_remove.extend(seasons or [])
-                    to_remove.extend(episodes or [])
-                    to_remove.extend(absolute_episodes)
-                    if titles:
-                        # Compact packs glue the tag to the month (JDH04-2022):
-                        # the guessed title then swallows the month digits.
-                        # Truncate it at the month start (JDH04 -> JDH).
-                        title = titles[0]
-                        month_start = jdh.start('month')
-                        if title.start < month_start <= title.end:
-                            cleaned = input_string[title.start:month_start]
-                            cleaned = re.sub(r'[\s._-]+', ' ', cleaned).strip(' .-_([')
-                            if cleaned:
-                                new_title = copy.copy(title)
-                                new_title.value = cleaned
-                                to_remove.extend(titles)
-                                to_append.append(new_title)
-                    self._append_month_precision_date(
-                        to_append,
-                        jdh.start('month'),
-                        jdh.end('year'),
-                        year,
-                        month,
-                        input_string,
-                    )
-                    return _safe_removes(matches, to_remove), to_append
+        offset, segment, jdh = _search_segments(_JDH_MONTH_YEAR_RE, segments, sxxexx_matches)
+        if jdh:
+            month = int(jdh.group('month'))
+            year = _parse_year(jdh.group('year'))
+            if year is not None and _is_valid_year(year):
+                month_start = offset + jdh.start('month')
+                to_remove.extend(years or [])
+                to_remove.extend(seasons or [])
+                to_remove.extend(episodes or [])
+                to_remove.extend(absolute_episodes)
+                if titles:
+                    # Compact packs glue the tag to the month (JDH04-2022):
+                    # the guessed title then swallows the month digits.
+                    # Truncate it at the month start (JDH04 -> JDH).
+                    title = titles[0]
+                    if title.start < month_start <= title.end:
+                        cleaned = input_string[title.start:month_start]
+                        cleaned = re.sub(r'[\s._-]+', ' ', cleaned).strip(' .-_([')
+                        if cleaned:
+                            new_title = copy.copy(title)
+                            new_title.value = cleaned
+                            to_remove.extend(titles)
+                            to_append.append(new_title)
+                self._append_month_precision_date(
+                    to_append,
+                    month_start,
+                    offset + jdh.end('year'),
+                    year,
+                    month,
+                    input_string,
+                )
+                return _safe_removes(matches, to_remove), to_append
 
         # --- Pattern 1: title ends with month name + year match ---------------
         if years and titles:
@@ -366,12 +404,11 @@ class CreateDateFromMonthYearRelease(Rule):
         # --- Pattern 2: adjacent MM.YYYY or YYYY.MM (1 or 2 digit month) ------
         # Skip real SxxExx and anime absolute-episode packs (e.g. Show.-.5.2016),
         # but still handle dash monthly packs mis-parsed as season==year.
-        if (
-            input_string
-            and (not has_sxxexx or season_looks_like_year)
-            and (not has_anime_absolute or season_looks_like_year)
-        ):
-            numeric = _NUMERIC_MONTH_YEAR_RE.search(input_string)
+        if not has_anime_absolute or season_looks_like_year:
+            offset, segment, numeric = _search_segments(
+                _NUMERIC_MONTH_YEAR_RE, segments, sxxexx_matches,
+                allow_sxxexx=season_looks_like_year,
+            )
             if numeric:
                 if numeric.group('y1'):
                     year = int(numeric.group('y1'))
@@ -395,8 +432,8 @@ class CreateDateFromMonthYearRelease(Rule):
 
                     self._append_month_precision_date(
                         to_append,
-                        span_start,
-                        span_end,
+                        offset + span_start,
+                        offset + span_end,
                         year,
                         month,
                         input_string,
@@ -409,30 +446,32 @@ class CreateDateFromMonthYearRelease(Rule):
         # by the regex.
         # Years 01-12 are ambiguous with episode ranges (02-03, 1-12) — skip
         # those here; JDH-prefixed packs still use pattern 0b.
-        if input_string and (not has_sxxexx or season_looks_like_year):
-            short = _NUMERIC_MONTH_SHORT_YEAR_RE.search(input_string)
-            if short:
-                month = int(short.group('month'))
-                year_token = short.group('year')
-                year = _parse_year(year_token)
-                if (
-                    year is not None
-                    and _is_valid_year(year)
-                    and int(year_token) > 12
-                ):
-                    to_remove.extend(seasons or [])
-                    to_remove.extend(episodes or [])
-                    to_remove.extend(years or [])
-                    to_remove.extend(absolute_episodes)
-                    self._append_month_precision_date(
-                        to_append,
-                        short.start('month'),
-                        short.end('year'),
-                        year,
-                        month,
-                        input_string,
-                    )
-                    return _safe_removes(matches, to_remove), to_append
+        offset, segment, short = _search_segments(
+            _NUMERIC_MONTH_SHORT_YEAR_RE, segments, sxxexx_matches,
+            allow_sxxexx=season_looks_like_year,
+        )
+        if short:
+            month = int(short.group('month'))
+            year_token = short.group('year')
+            year = _parse_year(year_token)
+            if (
+                year is not None
+                and _is_valid_year(year)
+                and int(year_token) > 12
+            ):
+                to_remove.extend(seasons or [])
+                to_remove.extend(episodes or [])
+                to_remove.extend(years or [])
+                to_remove.extend(absolute_episodes)
+                self._append_month_precision_date(
+                    to_append,
+                    offset + short.start('month'),
+                    offset + short.end('year'),
+                    year,
+                    month,
+                    input_string,
+                )
+                return _safe_removes(matches, to_remove), to_append
 
         # --- Pattern 3: day + month name in episode_title, year elsewhere ------
         episode_titles = matches.named('episode_title')

@@ -156,6 +156,27 @@ DASH_MONTH_YEAR_CASES = [
     ('[CANAL+] Journal du Hard Janvier 2021.mp4', date(2021, 1, 1), 'Journal du Hard'),
     ('[JDH] Le journal du hard - Juillet 2022 WEBrip 2160p x265 AAC', date(2022, 7, 1), 'Le journal du hard'),
     ('[JDH].Le.journal.du.hard.2022.07.Juillet.2022.4KRip.H265.AAC', date(2022, 7, 1), 'Le journal du hard'),
+    # A season folder must not turn the file's month into an episode number
+    (
+        r'M:\media\tv\Le journal du hard (1991)\Le journal du hard S35\Le journal du hard 01-2026.mkv',
+        date(2026, 1, 1),
+        'Le journal du hard',
+    ),
+    (
+        r'M:\media\tv\Le journal du hard (1991)\Le journal du hard S35\Le journal du hard Janvier 2026.mkv',
+        date(2026, 1, 1),
+        'Le journal du hard',
+    ),
+    (
+        r'M:\media\tv\Le journal du hard (1991)\Le journal du hard S33\JDH-04-24-720p',
+        date(2024, 4, 1),
+        'Le journal du hard',
+    ),
+    (
+        r'M:\media\tv\Le journal du hard (1991)\Le journal du hard S32\JDH-03-23',
+        date(2023, 3, 1),
+        'Le journal du hard',
+    ),
 ]
 
 
@@ -206,6 +227,17 @@ def test_full_air_date_releases_digit_widths(release_name, expected_date):
 
 @pytest.mark.parametrize('release_name,season,episode', STANDARD_SXXEXX_CASES)
 def test_standard_sxxexx_not_converted_to_month_year(release_name, season, episode):
+    result = guessit_parser.guessit(release_name, cached=False)
+    assert result.get('date') is None
+    assert result.get('season') == season
+    assert result.get('episode') == episode
+
+
+@pytest.mark.parametrize('release_name,season,episode', [
+    (r'M:\media\tv\Show Name\Season 03\Show.Name.S03E05.1080p.mkv', 3, 5),
+    (r'M:\media\tv\Show (2011)\Season 01\Show.Name.S01E02.mkv', 1, 2),
+])
+def test_sxxexx_in_library_path_not_converted(release_name, season, episode):
     result = guessit_parser.guessit(release_name, cached=False)
     assert result.get('date') is None
     assert result.get('season') == season
