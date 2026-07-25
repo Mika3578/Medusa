@@ -75,7 +75,7 @@
                             class="form-control-inline-max input-sm max-input350 search-pattern"
                             style="padding-left: 50px"
                             :disabled="!selectedTitle"
-                            placeholder=" e.g. %MM %Y or %0M.%Y"
+                            placeholder="e.g. %MM %Y or %0M.%Y"
                         >
                         <input type="checkbox" v-model="enabled">
                         <p v-if="!validated && isValidMessage">{{isValidMessage}}</p>
