@@ -153,11 +153,11 @@ class NameParser(object):
                 return [], []
 
             indexer_api_params = indexerApi(result.series.indexer).api_params.copy()
+            if result.series.lang:
+                indexer_api_params['language'] = result.series.lang
+
             indexer_api = indexerApi(result.series.indexer).indexer(**indexer_api_params)
             try:
-                if result.series.lang:
-                    indexer_api_params['language'] = result.series.lang
-
                 tv_episode = indexer_api[result.series.indexerid].aired_on(result.air_date)[0]
 
                 season_number = int(tv_episode['seasonnumber'])
