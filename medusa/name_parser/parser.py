@@ -58,11 +58,41 @@ class NameParser(object):
 
     @staticmethod
     def _get_episodes_by_air_date(result):
-        airdate = result.air_date.toordinal()
+        airdate = result.air_date
         main_db_con = db.DBConnection()
         sql_result = main_db_con.select(
             'SELECT season, episode FROM tv_episodes WHERE indexer = ? AND showid = ? AND airdate = ?',
-            [result.series.indexer, result.series.series_id, airdate])
+            [result.series.indexer, result.series.series_id, airdate.toordinal()])
+
+        # Month-only scene releases (Mai.2016, 05.2016, ...) do not include the
+        # broadcast day. Day=1 on the guessed date is only a placeholder — shows
+        # like Le Journal du Hard air on the first Saturday of the month.
+        # Resolve by year+month when precision is month.
+        month_precision = getattr(result, 'date_precision', None) == 'month'
+        if month_precision or (not sql_result and airdate.day == 1):
+            from medusa.helper.month_names import month_date_range
+            month_start, month_end = month_date_range(airdate.year, airdate.month)
+            month_results = main_db_con.select(
+                'SELECT season, episode FROM tv_episodes '
+                'WHERE indexer = ? AND showid = ? AND airdate >= ? AND airdate < ? '
+                'ORDER BY airdate',
+                [result.series.indexer, result.series.series_id,
+                 month_start.toordinal(), month_end.toordinal()])
+            if len(month_results) == 1:
+                log.debug(
+                    'Resolved month-only release {year}-{month:02d} to episode '
+                    '{season}x{episode} (broadcast day is not the placeholder day)',
+                    {
+                        'year': airdate.year,
+                        'month': airdate.month,
+                        'season': month_results[0]['season'],
+                        'episode': month_results[0]['episode'],
+                    }
+                )
+                return month_results
+            if month_precision:
+                # Ambiguous month (0 or 2+ episodes): do not guess.
+                return []
 
         return sql_result
 
@@ -107,6 +137,19 @@ class NameParser(object):
         if season_number is None or not episode_numbers:
             log.debug('Series {name} has no season or episodes, using indexer',
                       {'name': result.series.name})
+
+            # Month-only releases: the guessed day is not the air day. Prefer DB
+            # month match above; indexer aired_on(exact day) would be wrong.
+            if getattr(result, 'date_precision', None) == 'month':
+                log.warning(
+                    'Unable to find a unique episode in {year}-{month:02d} for series {name}. Skipping',
+                    {
+                        'year': result.air_date.year,
+                        'month': result.air_date.month,
+                        'name': result.series.name,
+                    }
+                )
+                return [], []
 
             indexer_api_params = indexerApi(result.series.indexer).api_params.copy()
             indexer_api = indexerApi(result.series.indexer).indexer(**indexer_api_params)
@@ -518,14 +561,16 @@ class NameParser(object):
                            ab_episode_numbers=helpers.ensure_list(guess.get('absolute_episode')),
                            air_date=guess.get('date'), release_group=guess.get('release_group'),
                            proper_tags=helpers.ensure_list(guess.get('proper_tag')), version=guess.get('version', -1),
-                           episode_details=helpers.ensure_list(guess.get('episode_details')))
+                           episode_details=helpers.ensure_list(guess.get('episode_details')),
+                           date_precision=guess.get('date_precision'))
 
 
 class ParseResult(object):
     """Represent the release information for a given name."""
 
     def __init__(self, guess, series_name=None, season_number=None, episode_numbers=None, ab_episode_numbers=None,
-                 air_date=None, release_group=None, proper_tags=None, version=None, original_name=None, episode_details=None):
+                 air_date=None, release_group=None, proper_tags=None, version=None, original_name=None,
+                 episode_details=None, date_precision=None):
         """Initialize the class.
 
         :param guess:
@@ -550,6 +595,8 @@ class ParseResult(object):
         :type original_name: str
         :param episode_details:
         :type episode_details: list of str
+        :param date_precision:
+        :type date_precision: str or None
         """
         self.original_name = original_name
         self.series_name = series_name
@@ -559,6 +606,7 @@ class ParseResult(object):
         self.quality = self.get_quality(guess)
         self.release_group = release_group
         self.air_date = air_date
+        self.date_precision = date_precision
         self.series = None
         self.version = version
         self.proper_tags = proper_tags
