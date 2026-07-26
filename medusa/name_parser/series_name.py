@@ -8,11 +8,12 @@ from medusa.helpers import full_sanitize_scene_name
 
 
 def normalize_series_name_for_comparison(name):
-    """Normalize a series title for equality checks only.
+    """Normalize a series title for library/alias matching and cache keys.
 
     GuessIt 4 may return more accurate punctuation than GuessIt 3
     (``11.22.63``, ``R-15``, ``9-1-1``). Keep those raw values in parser
-    output; use this helper when matching against the library or aliases.
+    output; use this helper when matching against the library or aliases,
+    and when building persistent keys in :mod:`medusa.name_cache`.
 
     Applies Unicode NFKD (strip combining marks) then
     :func:`medusa.helpers.full_sanitize_scene_name`, which folds case, dots,

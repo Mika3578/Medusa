@@ -1989,10 +1989,12 @@ class FixEpisodeTitleAsMultiSeason(Rule):
             if not previous:
                 return
 
-            episode_title = episode_titles[0]
-            if not str(episode_title.value)[0].isdigit():
+            # Use the episode_title immediately before the weak season, not titles[0].
+            episode_title = previous[0]
+            title_text = str(episode_title.value or '')
+            if title_text and not title_text[0].isdigit():
                 fixed_episode_title = copy.copy(episode_title)
-                fixed_episode_title.value = episode_title.value + ' ' + str(season.value)
+                fixed_episode_title.value = title_text + ' ' + str(season.value)
                 to_remove.append(episode_title)
                 to_append.append(fixed_episode_title)
             to_remove.append(season)

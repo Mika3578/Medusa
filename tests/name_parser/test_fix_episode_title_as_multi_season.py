@@ -50,6 +50,50 @@ def test_existing_episode_title_uses_copies_not_mutation():
     assert weak_season.value == 1
 
 
+def test_updates_previous_episode_title_not_first_match():
+    """When multiple episode_title matches exist, only the one before the weak season changes."""
+    text = 'Show.Name.S09E06.First.Trust.No.1.mkv'
+    early_title = Match(16, 21, value='First', name='episode_title', input_string=text)
+    near_title = Match(22, 30, value='Trust No', name='episode_title', input_string=text)
+    weak_season = Match(31, 32, value=1, name='season', input_string=text)
+    matches = Matches([
+        Match(0, 9, value='Show Name', name='title', input_string=text),
+        Match(10, 12, value=9, name='season', input_string=text, tags=['SxxExx']),
+        Match(13, 15, value=6, name='episode', input_string=text, tags=['SxxExx']),
+        early_title,
+        near_title,
+        weak_season,
+    ], input_string=text)
+
+    to_remove, to_append = FixEpisodeTitleAsMultiSeason().when(matches, {})
+    assert early_title not in to_remove
+    assert near_title in to_remove
+    fixed = next(match for match in to_append if match.name == 'episode_title')
+    assert fixed.value == 'Trust No 1'
+    assert early_title.value == 'First'
+
+
+def test_empty_episode_title_does_not_raise():
+    """Empty episode_title values must not raise IndexError."""
+    text = 'Show.Name.S01E02..1.mkv'
+    empty_title = Match(16, 16, value='', name='episode_title', input_string=text)
+    weak_season = Match(17, 18, value=1, name='season', input_string=text)
+    matches = Matches([
+        Match(0, 9, value='Show Name', name='title', input_string=text),
+        Match(10, 12, value=1, name='season', input_string=text, tags=['SxxExx']),
+        Match(13, 15, value=2, name='episode', input_string=text, tags=['SxxExx']),
+        empty_title,
+        weak_season,
+    ], input_string=text)
+
+    result = FixEpisodeTitleAsMultiSeason().when(matches, {})
+    assert result is not None
+    to_remove, to_append = result
+    assert weak_season in to_remove
+    assert empty_title not in to_remove
+    assert not any(match.name == 'episode_title' for match in to_append)
+
+
 def test_missing_episode_title_appends_copy_instead_of_mutating_season():
     """Weak season becomes a new episode_title copy; original season stays intact."""
     text = 'Show.Name.S01E02.3.mkv'
