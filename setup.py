@@ -89,6 +89,7 @@ setup(
     },
     cmdclass={'test': PyTest},
     tests_require=test_install_requires(),
+    python_requires='>=3.10',
     classifiers=[
         'Development Status :: 4 - Beta',
         'Intended Audience :: End Users/Desktop',
@@ -98,6 +99,8 @@ setup(
         'Operating System :: Unix',
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
+        'Programming Language :: Python :: 3.13',
         'Programming Language :: Python :: Implementation :: CPython',
         'Topic :: Internet',
         'Topic :: Multimedia :: Video',
