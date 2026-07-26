@@ -1,0 +1,32 @@
+{
+  "guessit": {
+    "version": "4.1.0",
+    "source": "PyPI wheel",
+    "wheel": "guessit-4.1.0-py3-none-any.whl",
+    "sha256": "0a493167b4af4f6a472b43569150b7100ba01e028a519154e05737cc517c4dfe",
+    "url": "https://pypi.org/project/guessit/4.1.0/",
+    "destination": "lib/guessit",
+    "renewed": "2026-07-26",
+    "downstream_files": [
+      "lib/guessit/monkeypatch.py"
+    ],
+    "omitted_from_wheel": [
+      "lib/guessit/test"
+    ],
+    "notes": "Upstream GuessIt test suite and cross_parser fixtures are omitted from the Medusa tree; they are not imported at runtime. Stock expected.py is kept; punctuation semantics are patched in medusa/name_parser/rules/expected_patch.py."
+  },
+  "rebulk": {
+    "version": "6.0.1",
+    "source": "PyPI wheel",
+    "wheel": "rebulk-6.0.1-py3-none-any.whl",
+    "sha256": "fe67fd0af60962c7f3957fa01ef0039c43631c09146228698ee22e20ac33907e",
+    "url": "https://pypi.org/project/rebulk/6.0.1/",
+    "destination": "ext/rebulk",
+    "renewed": "2026-07-26",
+    "downstream_files": [],
+    "omitted_from_wheel": [
+      "ext/rebulk/test"
+    ],
+    "notes": "Upstream Rebulk test suite is omitted from the Medusa tree; it is not imported at runtime."
+  }
+}
