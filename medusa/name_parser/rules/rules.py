@@ -1406,24 +1406,44 @@ class RestoreSeasonFromXPattern(Rule):
         to_remove = []
         to_append = []
         for episode in matches.named('episode'):
-            initiator_value = str(getattr(episode.initiator, 'value', '') or '')
-            initiator_raw = str(getattr(episode.initiator, 'raw', '') or '')
-            matched = (
-                self.season_x_episode.match(initiator_value)
-                or self.season_x_episode.match(initiator_raw)
-            )
+            initiator = episode.initiator
+            initiator_raw = str(getattr(initiator, 'raw', '') or '')
+            initiator_value = str(getattr(initiator, 'value', '') or '')
+            # Prefer raw so group offsets map onto absolute input coordinates.
+            matched = self.season_x_episode.match(initiator_raw)
             if not matched:
+                matched = self.season_x_episode.match(initiator_value)
+            if not matched:
+                continue
+
+            base_start = initiator.start
+            season_start = base_start + matched.start('season')
+            season_end = base_start + matched.end('season')
+            if season_start >= season_end:
                 continue
 
             season = copy.copy(episode)
             season.name = 'season'
             season.value = int(matched.group('season'))
+            season.start = season_start
+            season.end = season_end
             to_append.append(season)
 
             expected_episode = int(matched.group('episode'))
-            if episode.value != expected_episode:
+            episode_start = base_start + matched.start('episode')
+            episode_end = base_start + matched.end('episode')
+            need_value_fix = episode.value != expected_episode
+            need_span_fix = (
+                episode_start < episode_end
+                and (episode.start != episode_start or episode.end != episode_end)
+            )
+            if need_value_fix or need_span_fix:
                 fixed_episode = copy.copy(episode)
-                fixed_episode.value = expected_episode
+                if need_value_fix:
+                    fixed_episode.value = expected_episode
+                if episode_start < episode_end:
+                    fixed_episode.start = episode_start
+                    fixed_episode.end = episode_end
                 to_remove.append(episode)
                 to_append.append(fixed_episode)
 
@@ -1907,7 +1927,7 @@ class FixEpisodeTitleAsMultiSeason(Rule):
     """
 
     priority = POST_PROCESS
-    consequence = [RemoveMatch]
+    consequence = [RemoveMatch, AppendMatch]
 
     def when(self, matches, context):
         """Evaluate the rule.
@@ -1961,6 +1981,7 @@ class FixEpisodeTitleAsMultiSeason(Rule):
             return
 
         to_remove = []
+        to_append = []
 
         episode_titles = matches.named('episode_title')
         if episode_titles:
@@ -1970,18 +1991,24 @@ class FixEpisodeTitleAsMultiSeason(Rule):
 
             episode_title = episode_titles[0]
             if not str(episode_title.value)[0].isdigit():
-                episode_title.value = episode_title.value + ' ' + str(season.value)
+                fixed_episode_title = copy.copy(episode_title)
+                fixed_episode_title.value = episode_title.value + ' ' + str(season.value)
+                to_remove.append(episode_title)
+                to_append.append(fixed_episode_title)
             to_remove.append(season)
         else:
             previous = matches.previous(season, predicate=lambda match: match.name == 'episode')
             if not previous:
                 return
 
-            episode_title = season
-            episode_title.name = 'episode_title'
-            episode_title.value = str(season.value)
+            new_episode_title = copy.copy(season)
+            new_episode_title.name = 'episode_title'
+            new_episode_title.value = str(season.value)
+            to_remove.append(season)
+            to_append.append(new_episode_title)
 
-        return to_remove
+        if to_remove or to_append:
+            return to_remove, to_append
 
 
 class PartsAsEpisodeNumbers(Rule):
