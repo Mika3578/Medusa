@@ -802,6 +802,8 @@ def config_search():
     section_data['general']['checkPropersInterval'] = app.CHECK_PROPERS_INTERVAL
     section_data['general']['propersSearchDays'] = int(app.PROPERS_SEARCH_DAYS)
     section_data['general']['backlogDays'] = int(app.BACKLOG_DAYS)
+    section_data['general']['backlogBatchSize'] = int(app.BACKLOG_BATCH_SIZE)
+    section_data['general']['backlogBatchRefillThreshold'] = int(app.BACKLOG_BATCH_REFILL_THRESHOLD)
     section_data['general']['backlogFrequency'] = int_default(app.BACKLOG_FREQUENCY, app.DEFAULT_BACKLOG_FREQUENCY)
     section_data['general']['minBacklogFrequency'] = int(app.MIN_BACKLOG_FREQUENCY)
     section_data['general']['dailySearchFrequency'] = int_default(app.DAILYSEARCH_FREQUENCY, app.DEFAULT_DAILYSEARCH_FREQUENCY)

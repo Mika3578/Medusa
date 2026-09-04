@@ -292,6 +292,8 @@ class ConfigHandler(BaseRequestHandler):
         # 'search.general.propersIntervalLabels': IntegerField(app, 'PROPERS_INTERVAL_LABELS'),
         'search.general.propersSearchDays': IntegerField(app, 'PROPERS_SEARCH_DAYS'),
         'search.general.backlogDays': IntegerField(app, 'BACKLOG_DAYS'),
+        'search.general.backlogBatchSize': IntegerField(app, 'BACKLOG_BATCH_SIZE'),
+        'search.general.backlogBatchRefillThreshold': IntegerField(app, 'BACKLOG_BATCH_REFILL_THRESHOLD'),
         'search.general.backlogFrequency': IntegerField(app, 'BACKLOG_FREQUENCY'),
         'search.general.minBacklogFrequency': IntegerField(app, 'MIN_BACKLOG_FREQUENCY'),
         'search.general.dailySearchFrequency': IntegerField(app, 'DAILYSEARCH_FREQUENCY'),
@@ -901,6 +903,8 @@ class DataGenerator(object):
         # section_data['general']['propersIntervalLabels'] = app.PROPERS_INTERVAL_LABELS
         section_data['general']['propersSearchDays'] = int(app.PROPERS_SEARCH_DAYS)
         section_data['general']['backlogDays'] = int(app.BACKLOG_DAYS)
+        section_data['general']['backlogBatchSize'] = int(app.BACKLOG_BATCH_SIZE)
+        section_data['general']['backlogBatchRefillThreshold'] = int(app.BACKLOG_BATCH_REFILL_THRESHOLD)
         section_data['general']['backlogFrequency'] = int_default(app.BACKLOG_FREQUENCY, app.DEFAULT_BACKLOG_FREQUENCY)
         section_data['general']['minBacklogFrequency'] = int(app.MIN_BACKLOG_FREQUENCY)
         section_data['general']['dailySearchFrequency'] = int_default(app.DAILYSEARCH_FREQUENCY, app.DEFAULT_DAILYSEARCH_FREQUENCY)

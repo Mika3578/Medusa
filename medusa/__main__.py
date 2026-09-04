@@ -694,6 +694,8 @@ class Application(object):
             app.SHOWUPDATE_HOUR = max(0, min(23, check_setting_int(app.CFG, 'General', 'showupdate_hour', app.DEFAULT_SHOWUPDATE_HOUR)))
 
             app.BACKLOG_DAYS = check_setting_int(app.CFG, 'General', 'backlog_days', 7)
+            app.BACKLOG_BATCH_SIZE = max(0, check_setting_int(app.CFG, 'General', 'backlog_batch_size', 0))
+            app.BACKLOG_BATCH_REFILL_THRESHOLD = max(0, check_setting_int(app.CFG, 'General', 'backlog_batch_refill_threshold', 2))
 
             app.NEWS_LAST_READ = check_setting_str(app.CFG, 'General', 'news_last_read', '1970-01-01')
             app.NEWS_LATEST = app.NEWS_LAST_READ
@@ -1735,6 +1737,8 @@ class Application(object):
         new_config['General']['metadata_plex'] = app.METADATA_PLEX
 
         new_config['General']['backlog_days'] = int(app.BACKLOG_DAYS)
+        new_config['General']['backlog_batch_size'] = int(app.BACKLOG_BATCH_SIZE)
+        new_config['General']['backlog_batch_refill_threshold'] = int(app.BACKLOG_BATCH_REFILL_THRESHOLD)
 
         new_config['General']['cache_dir'] = app.ACTUAL_CACHE_DIR if app.ACTUAL_CACHE_DIR else 'cache'
         new_config['General']['root_dirs'] = app.ROOT_DIRS if app.ROOT_DIRS else []

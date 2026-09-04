@@ -104,6 +104,19 @@ class SearchQueue(generic_queue.GenericQueue):
                 length['backlog'] += 1
         return length
 
+    def backlog_pending(self):
+        """Count backlog searches that are queued or still running."""
+        pending = sum(1 for cur_item in self.queue if isinstance(cur_item, BacklogQueueItem))
+
+        current_item = self.current_item
+        if isinstance(current_item, BacklogQueueItem) and current_item.is_alive():
+            # finish() clears inProgress right before the thread exits, so a
+            # finished item that is still alive must not count as pending.
+            if current_item.inProgress or current_item.start_time is None:
+                pending += 1
+
+        return pending
+
     def add_item(self, item):
         """Add item to queue."""
         if isinstance(item, (DailySearchQueueItem, ProperSearchQueueItem)):
@@ -630,6 +643,11 @@ class BacklogQueueItem(generic_queue.QueueItem):
         ws.Message('QueueItemUpdate', self.to_json).push()
 
         self.finish()
+
+        # Let the backlog searcher queue its next batch without waiting for a poll.
+        backlog_scheduler = app.backlog_search_scheduler
+        if backlog_scheduler is not None:
+            backlog_scheduler.action.notify_capacity()
 
 
 class FailedQueueItem(generic_queue.QueueItem):
