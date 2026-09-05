@@ -918,6 +918,14 @@ async def test_config_patch_normalizes_backlog_batch_settings(http_client, creat
     assert (app.BACKLOG_BATCH_SIZE, app.BACKLOG_BATCH_REFILL_THRESHOLD) == p['expected']
     # the normalized pair is what gets persisted, not the raw submitted values
     assert saved == [p['expected']]
+    # the response echoes the stored values for the submitted fields
+    expected_size, expected_threshold = p['expected']
+    expected_response = {}
+    if 'backlogBatchSize' in p['body']:
+        expected_response['backlogBatchSize'] = expected_size
+    if 'backlogBatchRefillThreshold' in p['body']:
+        expected_response['backlogBatchRefillThreshold'] = expected_threshold
+    assert json.loads(response.body)['search']['general'] == expected_response
 
 
 @pytest.mark.gen_test
@@ -938,6 +946,8 @@ async def test_config_patch_backlog_batch_settings_is_order_independent(http_cli
     assert response.code == 200
     assert (app.BACKLOG_BATCH_SIZE, app.BACKLOG_BATCH_REFILL_THRESHOLD) == (4, 3)
     assert saved == [(4, 3)]
+    assert json.loads(response.body)['search']['general'] == {
+        'backlogBatchSize': 4, 'backlogBatchRefillThreshold': 3}
 
 
 @pytest.mark.gen_test

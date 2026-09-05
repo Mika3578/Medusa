@@ -653,8 +653,12 @@ class ConfigHandler(BaseRequestHandler):
                 set_nested_value(ignored, key, value)
 
         for keys, normalize in self.dependent_patches:
-            if accepted_keys.intersection(keys):
+            patched_keys = accepted_keys.intersection(keys)
+            if patched_keys:
                 normalize()
+                # Echo what was actually stored rather than the raw submitted values
+                for key in patched_keys:
+                    set_nested_value(accepted, key, getattr(app, self.patches[key].attr))
 
         if ignored:
             log.warning('Config patch ignored {items!r}', {'items': ignored})
