@@ -34,6 +34,7 @@ from medusa.queues.utils import (
 from medusa.sbdatetime import date_presets, time_presets
 from medusa.schedulers.download_handler import status_strings
 from medusa.schedulers.utils import generate_schedulers
+from medusa.search.backlog import effective_refill_threshold
 from medusa.server.api.v2.base import (
     BaseRequestHandler,
     BooleanField,
@@ -78,6 +79,18 @@ def season_folders_validator(value):
     return not (app.NAMING_FORCE_FOLDERS and value is False)
 
 
+def normalize_backlog_batch_settings():
+    """Apply the backlog batching invariants to both settings at once.
+
+    The refill threshold depends on the batch size, so the pair is normalized
+    after every patched field has been stored. The outcome therefore does not
+    depend on which of the two was submitted, nor on the key order of the body.
+    """
+    app.BACKLOG_BATCH_SIZE = max(0, int(app.BACKLOG_BATCH_SIZE))
+    app.BACKLOG_BATCH_REFILL_THRESHOLD = effective_refill_threshold(
+        app.BACKLOG_BATCH_SIZE, app.BACKLOG_BATCH_REFILL_THRESHOLD)
+
+
 class ConfigHandler(BaseRequestHandler):
     """Config request handler."""
 
@@ -89,6 +102,12 @@ class ConfigHandler(BaseRequestHandler):
     path_param = ('path_param', r'\w+')
     #: allowed HTTP methods
     allowed_methods = ('GET', 'PATCH',)
+    #: groups of interdependent settings, normalized together once all
+    #: patched fields of a request have been stored
+    dependent_patches = (
+        (('search.general.backlogBatchSize', 'search.general.backlogBatchRefillThreshold'),
+         normalize_backlog_batch_settings),
+    )
     #: patch mapping
     patches = {
         # Main
@@ -624,12 +643,18 @@ class ConfigHandler(BaseRequestHandler):
                 else:
                     set_nested_value(ignored, 'metadata.metadataProviders', metadata_providers)
 
+        accepted_keys = set()
         for key, value in iter_nested_items(data):
             patch_field = self.patches.get(key)
             if patch_field and patch_field.patch(app, value):
                 set_nested_value(accepted, key, value)
+                accepted_keys.add(key)
             else:
                 set_nested_value(ignored, key, value)
+
+        for keys, normalize in self.dependent_patches:
+            if accepted_keys.intersection(keys):
+                normalize()
 
         if ignored:
             log.warning('Config patch ignored {items!r}', {'items': ignored})
