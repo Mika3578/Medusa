@@ -216,6 +216,8 @@ class BacklogSearcher(object):
         else:
             log.info(u'Running full backlog search on missed episodes for selected shows')
 
+        completed = False
+
         try:
             if which_shows or app.BACKLOG_BATCH_SIZE <= 0:
                 completed = self._search_all(show_list, from_date)

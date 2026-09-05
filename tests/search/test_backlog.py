@@ -398,6 +398,43 @@ def test_completed_pass_updates_last_backlog(batch_env, library, searcher, monke
     assert store.value is None
 
 
+class SearchBoom(Exception):
+    """Marker exception raised by a failing search path."""
+
+
+@pytest.mark.parametrize('batch_size,failing_method', [
+    (0, '_search_all'),
+    (2, '_search_in_batches'),
+])
+def test_search_backlog_propagates_search_errors_and_resets_state(batch_env, library, searcher, monkeypatch,
+                                                                  batch_size, failing_method):
+    queue, store = batch_env(batch_size=batch_size, threshold=1)
+    last_backlog = []
+    resets = []
+    original_reset = searcher._reset_pi
+
+    def reset_pi():
+        resets.append(True)
+        original_reset()
+
+    def boom(*args, **kwargs):
+        raise SearchBoom('provider exploded')
+
+    monkeypatch.setattr(app, 'showList', library)
+    monkeypatch.setattr(searcher, '_set_last_backlog', last_backlog.append)
+    monkeypatch.setattr(searcher, '_reset_pi', reset_pi)
+    monkeypatch.setattr(searcher, failing_method, boom)
+
+    # The original exception must propagate unchanged (no UnboundLocalError, nothing swallowed).
+    with pytest.raises(SearchBoom, match='provider exploded'):
+        searcher.search_backlog()
+
+    assert searcher.amActive is False
+    assert resets == [True]
+    assert last_backlog == []
+    assert store.writes == []
+
+
 # --- limited / targeted / legacy paths --------------------------------------
 
 def test_limited_forced_backlog_never_touches_persistent_cursor(batch_env, library, searcher, monkeypatch):
