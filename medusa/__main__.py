@@ -94,7 +94,7 @@ from medusa.queues.event_queue import Events
 from medusa.schedulers import (
     download_handler, episode_updater, scheduler, show_updater, trakt_checker
 )
-from medusa.search.backlog import BacklogSearchScheduler, BacklogSearcher
+from medusa.search.backlog import BacklogSearchScheduler, BacklogSearcher, effective_refill_threshold
 from medusa.search.daily import DailySearcher
 from medusa.search.proper import ProperFinder
 from medusa.search.queue import ForcedSearchQueue, PostProcessQueue, SearchQueue, SnatchQueue
@@ -695,7 +695,8 @@ class Application(object):
 
             app.BACKLOG_DAYS = check_setting_int(app.CFG, 'General', 'backlog_days', 7)
             app.BACKLOG_BATCH_SIZE = max(0, check_setting_int(app.CFG, 'General', 'backlog_batch_size', 0))
-            app.BACKLOG_BATCH_REFILL_THRESHOLD = max(0, check_setting_int(app.CFG, 'General', 'backlog_batch_refill_threshold', 2))
+            app.BACKLOG_BATCH_REFILL_THRESHOLD = effective_refill_threshold(
+                app.BACKLOG_BATCH_SIZE, check_setting_int(app.CFG, 'General', 'backlog_batch_refill_threshold', 2))
 
             app.NEWS_LAST_READ = check_setting_str(app.CFG, 'General', 'news_last_read', '1970-01-01')
             app.NEWS_LATEST = app.NEWS_LAST_READ

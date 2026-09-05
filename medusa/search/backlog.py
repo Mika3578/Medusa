@@ -87,6 +87,19 @@ def next_batch(show_list, from_date, cursor, size):
     return list(islice(iter_wanted_segments(show_list, from_date, cursor), size))
 
 
+def effective_refill_threshold(batch_size, threshold):
+    """Clamp the refill threshold so a batch can never refill before it started draining.
+
+    A threshold >= batch size would let the planner queue batch after batch
+    without ever waiting, defeating the throttling. With a batch size of 1 the
+    effective threshold is therefore always 0.
+    """
+    threshold = max(0, int(threshold))
+    if batch_size <= 0:
+        return threshold
+    return min(threshold, int(batch_size) - 1)
+
+
 class BacklogSearchScheduler(scheduler.Scheduler):
     """Backlog search scheduler class."""
 
@@ -118,6 +131,11 @@ class BacklogSearcher(object):
         self.forced = False
         self.currentSearchInfo = {}
         self._capacity = threading.Event()
+        # Last segment key whose search actually completed during the current
+        # resumable pass. Only this value is ever persisted; the planner's own
+        # position (already queued work) is deliberately kept in memory.
+        self._completed_cursor = None
+        self._cursor_lock = threading.Lock()
 
         self._to_json = {
             'identifier': str(uuid4()),
@@ -144,6 +162,24 @@ class BacklogSearcher(object):
         """Check if backlog is running."""
         log.debug(u'amWaiting: {0}, amActive: {1}', self.amWaiting, self.amActive)
         return (not self.amWaiting) and self.amActive
+
+    def record_completed(self, cursor_key):
+        """Persist the cursor of a backlog search that actually ran.
+
+        Called from the ``BacklogQueueItem`` thread, before the item is marked
+        finished, so the batch loop can never observe the queue as drained while
+        a completion is still unrecorded. Only items of a resumable full pass
+        carry a key, and advancement is monotonic in case a stale completion
+        arrives. Persisting on completion (not on queueing) gives at-least-once
+        semantics: after a crash a segment may be searched again, never skipped.
+        """
+        if cursor_key is None:
+            return
+
+        with self._cursor_lock:
+            if self._completed_cursor is None or cursor_key > self._completed_cursor:
+                self._completed_cursor = cursor_key
+                self._set_cursor(cursor_key)
 
     def notify_capacity(self):
         """Wake the batch loop because a backlog search finished."""
@@ -223,26 +259,31 @@ class BacklogSearcher(object):
 
         Each batch is queued only once the number of pending backlog searches
         has dropped to the configured threshold, so a large library never floods
-        the search queue and slow providers are not hammered. The position is
-        persisted after every batch so an interrupted pass resumes where it
-        stopped.
+        the search queue and slow providers are not hammered.
+
+        Two positions are tracked. ``queued_cursor`` (memory only) is where the
+        planner is, so a segment is not queued twice in this process. The
+        persisted cursor only ever advances from :meth:`record_completed`, when
+        an item's search actually ran, giving at-least-once semantics: after a
+        crash a segment may be searched again, but never skipped.
 
         :return: ``True`` when the whole pass completed, ``False`` when interrupted.
         """
         batch_size = int(app.BACKLOG_BATCH_SIZE)
-        threshold = max(0, int(app.BACKLOG_BATCH_REFILL_THRESHOLD))
-        cursor = self._get_cursor() if resume else None
+        threshold = effective_refill_threshold(batch_size, app.BACKLOG_BATCH_REFILL_THRESHOLD)
 
-        if cursor:
-            log.info(u'Resuming backlog search from cursor {0}', serialize_cursor(cursor))
+        queued_cursor = self._get_cursor() if resume else None
+        with self._cursor_lock:
+            self._completed_cursor = queued_cursor
+
+        if queued_cursor:
+            log.info(u'Resuming backlog search from cursor {0}', serialize_cursor(queued_cursor))
 
         while True:
             if not self._wait_for_capacity(threshold):
-                log.info(u'Backlog search interrupted, it will resume from cursor {0}',
-                         serialize_cursor(cursor))
-                return False
+                return self._interrupted()
 
-            batch = next_batch(show_list, from_date, cursor, batch_size)
+            batch = next_batch(show_list, from_date, queued_cursor, batch_size)
             if not batch:
                 break
 
@@ -250,20 +291,33 @@ class BacklogSearcher(object):
                 self.currentSearchInfo = {'title': '{series_name} Season {season}'.format(series_name=series_obj.name,
                                                                                           season=season)}
 
-                backlog_queue_item = BacklogQueueItem(series_obj, segment)
+                backlog_queue_item = BacklogQueueItem(series_obj, segment,
+                                                      backlog_cursor_key=key if resume else None)
                 app.search_queue_scheduler.action.add_item(backlog_queue_item)  # @UndefinedVariable
-                cursor = key
-
-            if resume:
-                self._set_cursor(cursor)
+                queued_cursor = key
 
             log.info(u'Queued a backlog batch of {0} season segment(s), waiting for the search queue to drain',
                      len(batch))
 
+        # The pass is only complete once the last queued searches actually ran;
+        # clearing the cursor earlier would skip them after a restart.
+        if not self._wait_for_capacity(0):
+            return self._interrupted()
+
         if resume:
-            self._set_cursor(None)
+            with self._cursor_lock:
+                self._completed_cursor = None
+                self._set_cursor(None)
 
         return True
+
+    def _interrupted(self):
+        """Log an interrupted pass and report failure so ``last_backlog`` stays untouched."""
+        with self._cursor_lock:
+            completed = self._completed_cursor
+        log.info(u'Backlog search interrupted, it will resume after the last completed segment {0!r}',
+                 serialize_cursor(completed))
+        return False
 
     def _wait_for_capacity(self, threshold):
         """Block until pending backlog searches drop to ``threshold``.

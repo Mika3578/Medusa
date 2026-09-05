@@ -13,6 +13,7 @@ from medusa import (
     ui,
 )
 from medusa.helper.common import try_int
+from medusa.search.backlog import effective_refill_threshold
 from medusa.server.web.config.handler import Config
 from medusa.server.web.core import PageTemplate
 
@@ -68,7 +69,8 @@ class ConfigSearch(Config):
         config.change_BACKLOG_FREQUENCY(backlog_frequency)
         app.BACKLOG_DAYS = try_int(backlog_days, 7)
         app.BACKLOG_BATCH_SIZE = max(0, try_int(backlog_batch_size, 0))
-        app.BACKLOG_BATCH_REFILL_THRESHOLD = max(0, try_int(backlog_batch_refill_threshold, 2))
+        app.BACKLOG_BATCH_REFILL_THRESHOLD = effective_refill_threshold(
+            app.BACKLOG_BATCH_SIZE, try_int(backlog_batch_refill_threshold, 2))
 
         app.CACHE_TRIMMING = config.checkbox_to_value(cache_trimming)
         app.MAX_CACHE_AGE = try_int(max_cache_age, 0)
