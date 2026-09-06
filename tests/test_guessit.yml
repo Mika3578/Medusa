@@ -4674,3 +4674,42 @@
   release_group: "Erai-raws"
   crc32: "1EB7B45D"
   subtitle_language: "mul"
+
+# Alternative Sx-xx numbering: S2-01 means season 2 episode 1
+? Show Name - S2-01 - Episode Title.2013-06-11.mp4
+: title: Show Name
+  season: 2
+  episode: 1
+  episode_title: Episode Title
+  date: 2013-06-11
+  container: mp4
+  type: episode
+
+? Show Name - S11-01 - Episode Title (Group).mkv
+: title: Show Name
+  season: 11
+  episode: 1
+  episode_title: Episode Title
+  release_group: Group
+  container: mkv
+  type: episode
+
+? /tv/Show Name (2012)/Show Name S07/Show Name - S7-01 - Episode Title.mkv
+: title: Show Name
+  alias: Show Name 2012
+  year: 2012
+  season: 7
+  episode: 1
+  episode_title: Episode Title
+  container: mkv
+  type: episode
+
+# Folder season disagrees with S9-05: keep folder season, do not invent S09E05
+? /tv/Show Name (2012)/Show Name S10/Show Name - S9-05 - Episode Title.mkv
+: title: Show Name
+  alias: Show Name 2012
+  year: 2012
+  season: 10
+  episode_title: "05 - Episode Title"
+  container: mkv
+  type: episode

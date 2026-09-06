@@ -1551,6 +1551,127 @@ class RemoveInvalidEpisodeSeparator(Rule):
                 return to_remove
 
 
+class SeasonDashEpisodeNumbers(Rule):
+    """Parse the alternative naming pattern S2-01 as season 2 episode 1.
+
+    GuessIt does not treat ``S2-01`` / ``S11-01`` as season/episode. It keeps the
+    folder (or ``S2``) as season and puts ``01`` into episode_title, so Medusa's
+    scan ignores the file (no episode number).
+
+    e.g.: Show Name - S2-01 - Episode Title.2013-06-11.mp4
+
+    guessit -t episode "Show Name - S2-01 - Episode Title.2013-06-11.mp4"
+
+    without this rule:
+        GuessIt found: {
+            "title": "Show Name",
+            "season": 2,
+            "date": "2013-06-11",
+            "episode_title": "01 - Episode Title",
+            "type": "episode"
+        }
+
+    with this rule:
+        GuessIt found: {
+            "title": "Show Name",
+            "season": 2,
+            "episode": 1,
+            "date": "2013-06-11",
+            "episode_title": "Episode Title",
+            "type": "episode"
+        }
+
+    The rule is skipped when an episode number is already present (S02E01),
+    when the show is anime, or when the pattern season disagrees with a season
+    already guessed from the folder (S9-05 inside a S10 folder).
+    """
+
+    priority = POST_PROCESS
+    consequence = [RemoveMatch, AppendMatch]
+    pattern = re.compile(r'(?i)(?<![A-Za-z0-9])S(\d{1,2})-(\d{1,2})(?!\d)')
+    title_prefix = re.compile(r'^(0*)(\d+)\s*-\s*')
+
+    def when(self, matches, context):
+        """Evaluate the rule.
+
+        :param matches:
+        :type matches: rebulk.match.Matches
+        :param context:
+        :type context: dict
+        :return:
+        """
+        # Only skip explicit anime parsing. A stray 'anime' tag on a release
+        # group (e.g. parenthetical text) must not disable this rule.
+        if context.get('show_type') == 'anime':
+            return
+
+        if matches.named('episode'):
+            return
+
+        fileparts = matches.markers.named('path')
+        search_spans = [(part.start, part.end) for part in fileparts] if fileparts else [(0, len(matches.input_string))]
+        # Prefer the filename (last path part) so a season folder cannot steal the match.
+        search_spans = list(reversed(search_spans))
+
+        found = None
+        for start, end in search_spans:
+            match = self.pattern.search(matches.input_string[start:end])
+            if match:
+                found = (start, match)
+                break
+
+        if not found:
+            return
+
+        offset, match = found
+        season_number = int(match.group(1))
+        episode_number = int(match.group(2))
+
+        existing_seasons = {int(item.value) for item in matches.named('season')}
+        # Season ranges like "s01-04" already expand to several seasons; do not
+        # treat the second number as an episode.
+        if len(existing_seasons) > 1:
+            return
+        if existing_seasons and season_number not in existing_seasons:
+            return
+
+        to_remove = []
+        to_append = []
+
+        template = matches.named('season') or matches.named('title') or matches.named('episode_title')
+        if not template:
+            return
+
+        episode = copy.copy(template[0])
+        episode.name = 'episode'
+        episode.value = episode_number
+        episode.start = offset + match.start(2)
+        episode.end = offset + match.end(2)
+        to_append.append(episode)
+
+        if not existing_seasons:
+            season = copy.copy(template[0])
+            season.name = 'season'
+            season.value = season_number
+            season.start = offset + match.start(1)
+            season.end = offset + match.end(1)
+            to_append.append(season)
+
+        for episode_title in matches.named('episode_title'):
+            prefix = self.title_prefix.match(episode_title.value)
+            if not prefix or int(prefix.group(2)) != episode_number:
+                continue
+            remainder = episode_title.value[prefix.end():].strip()
+            to_remove.append(episode_title)
+            if remainder:
+                new_title = copy.copy(episode_title)
+                new_title.value = remainder
+                to_append.append(new_title)
+            break
+
+        return to_remove, to_append
+
+
 class FixParentFolderReplacingTitle(Rule):
     """Fix folder name replacing title when it ends with digits.
 
@@ -2010,6 +2131,7 @@ def rules():
         OnePreGroupAsMultiEpisode,
         PartsAsEpisodeNumbers,
         RemoveInvalidEpisodeSeparator,
+        SeasonDashEpisodeNumbers,
         CreateAliasWithAlternativeTitles,
         CreateAliasWithCountryOrYear,
         FixTitlesThatExistOfAbsoluteEpisodeNumbers,
