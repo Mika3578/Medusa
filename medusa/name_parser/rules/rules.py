@@ -1609,9 +1609,12 @@ class SeasonDashEpisodeNumbers(Rule):
             return
 
         fileparts = matches.markers.named('path')
-        search_spans = [(part.start, part.end) for part in fileparts] if fileparts else [(0, len(matches.input_string))]
-        # Prefer the filename (last path part) so a season folder cannot steal the match.
-        search_spans = list(reversed(search_spans))
+        # Prefer the filename via GuessIt's marker_sorted (most valuable first).
+        # Reversing an unsorted path-marker list is not position-stable.
+        if fileparts:
+            search_spans = [(part.start, part.end) for part in marker_sorted(fileparts, matches)]
+        else:
+            search_spans = [(0, len(matches.input_string))]
 
         found = None
         for start, end in search_spans:
