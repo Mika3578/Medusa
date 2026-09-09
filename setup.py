@@ -43,8 +43,8 @@ def get_app_version():
     raise ValueError('Failed to get the app version!')
 
 
-with open(os.path.join(here, 'readme.md'), 'r') as r:
-    long_description = r.read()
+with open(os.path.join(here, 'README.md'), encoding='utf-8') as readme_file:
+    long_description = readme_file.read()
 
 
 def test_install_requires():
@@ -76,6 +76,7 @@ setup(
     long_description_content_type='text/markdown',
     url='https://github.com/pymedusa/Medusa',
     license='GPLv3',
+    python_requires='>=3.10',
     packages=packages(),
     include_package_data=True,
     # install_requires=install_requires(),
@@ -96,11 +97,11 @@ setup(
         'Operating System :: MacOS',
         'Operating System :: Microsoft :: Windows',
         'Operating System :: Unix',
-        'Programming Language :: Python :: 3.7',
-        'Programming Language :: Python :: 3.8',
-        'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
+        'Programming Language :: Python :: 3.13',
+        'Programming Language :: Python :: 3.14',
         'Programming Language :: Python :: Implementation :: CPython',
         'Topic :: Internet',
         'Topic :: Multimedia :: Video',
