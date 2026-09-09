@@ -4713,3 +4713,12 @@
   episode_title: "05 - Episode Title"
   container: mkv
   type: episode
+
+# Alphanumeric glued before Sx-yy: lookbehind must reject (no invented season)
+? PrefixS2-01 - Episode Title.mkv
+: title: PrefixS2
+  episode: 1
+  absolute_episode: 1
+  release_group: Episode Title
+  container: mkv
+  type: episode
