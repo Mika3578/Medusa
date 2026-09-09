@@ -3,6 +3,8 @@
 
 from __future__ import unicode_literals
 
+import unicodedata
+
 from mock.mock import Mock, patch
 
 import pytest
@@ -510,3 +512,108 @@ def test_find_search_results_reuses_single_contextual_matcher():
 
     matcher_cls.assert_called_once_with(series, [episode])
     assert matcher_instance.match.call_count == 2
+
+
+EXAMPLE_SHOW = 'Example Show'
+EXAMPLE_EPISODE = 'Episode Name'
+EXAMPLE_OTHER_EPISODE = 'Another Episode'
+
+
+@pytest.fixture
+def example_show_matcher():
+    target = _episode(1, 5, EXAMPLE_EPISODE)
+    series = _series(EXAMPLE_SHOW, [
+        target,
+        _episode(1, 4, EXAMPLE_OTHER_EPISODE),
+    ])
+    return _matcher(series, [target])
+
+
+def test_unnumbered_release_with_correct_titles_accepts_requested_episode(example_show_matcher):
+    match = example_show_matcher.match('Example.Show.Episode.Name.FR.mp4')
+    assert match.matched is True
+    assert match.method == 'episode_title'
+    assert match.season == 1
+    assert match.episodes == [5]
+
+
+def test_unnumbered_wrong_episode_title_is_rejected(example_show_matcher):
+    match = example_show_matcher.match('Example.Show.Another.Episode.FR.mp4')
+    assert match.matched is False
+    assert match.reason == 'episode_title_not_found'
+
+
+def test_accented_series_name_matches_ascii_fold():
+    target = _episode(1, 5, EXAMPLE_EPISODE)
+    series = _series('Série Exemple', [target])
+    matcher = _matcher(series, [target])
+    match = matcher.match('Serie.Exemple.Episode.Name.mkv')
+    assert match.matched is True
+    assert match.method == 'episode_title'
+
+
+def test_accented_episode_title_nfc_and_nfd():
+    target = _episode(1, 5, 'À la découverte')
+    series = _series(EXAMPLE_SHOW, [target])
+    matcher = _matcher(series, [target])
+
+    composed = matcher.match('Example.Show.A.la.decouverte.mp4')
+    assert composed.matched is True
+    assert composed.method == 'episode_title'
+
+    decomposed_title = unicodedata.normalize('NFD', 'À la découverte')
+    nfd_target = _episode(1, 5, decomposed_title)
+    nfd_series = _series(EXAMPLE_SHOW, [nfd_target])
+    nfd_matcher = _matcher(nfd_series, [nfd_target])
+    nfd_match = nfd_matcher.match('Example.Show.A.la.decouverte.mp4')
+    assert nfd_match.matched is True
+
+
+def test_typographic_and_ascii_apostrophes_match():
+    target = _episode(1, 5, 'L\u2019histoire secrète')
+    series = _series(EXAMPLE_SHOW, [target])
+    matcher = _matcher(series, [target])
+    match = matcher.match("Example.Show.L'histoire.secrete.mp4")
+    assert match.matched is True
+    assert match.method == 'episode_title'
+
+
+def test_colon_in_series_title_is_ignored_as_punctuation():
+    target = _episode(1, 5, EXAMPLE_EPISODE)
+    series = _series('Example : Documentary Series', [target])
+    matcher = _matcher(series, [target])
+    match = matcher.match('Example.Documentary.Series.Episode.Name.mkv')
+    assert match.matched is True
+    assert match.method == 'episode_title'
+
+
+def test_explicit_matching_numbering_is_accepted(example_show_matcher):
+    match = example_show_matcher.match('Example.Show.S01E05.Episode.Name.mkv')
+    assert match.matched is True
+    assert match.method == 'explicit_numbering'
+    assert match.episodes == [5]
+
+
+def test_explicit_conflicting_numbering_is_rejected_even_with_title(example_show_matcher):
+    match = example_show_matcher.match('Example.Show.S01E04.Episode.Name.mp4')
+    assert match.matched is False
+    assert match.reason == 'explicit_number_conflict'
+
+
+def test_weak_unrelated_numbers_do_not_match_without_title(example_show_matcher):
+    parsed = Mock()
+    parsed.episode_numbers = [1]
+    parsed.guess = {'episode': [1], 'year': 2020, 'screen_size': '1080p'}
+    match = example_show_matcher.match(
+        'Example.Show.website-1.channel-2.2020.1080p.mkv',
+        parsed_result=parsed,
+    )
+    assert match.matched is False
+    assert match.reason == 'episode_title_not_found'
+
+
+def test_no_numbering_and_no_title_is_never_a_season_pack(example_show_matcher):
+    match = example_show_matcher.match('Example.Show.FR.mp4')
+    assert match.matched is False
+    assert match.reason == 'episode_title_not_found'
+    assert match.reason != 'implicit_season_pack'
