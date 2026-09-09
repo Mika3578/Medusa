@@ -617,3 +617,152 @@ def test_no_numbering_and_no_title_is_never_a_season_pack(example_show_matcher):
     assert match.matched is False
     assert match.reason == 'episode_title_not_found'
     assert match.reason != 'implicit_season_pack'
+
+
+DOCUMENTARY_SHOW = 'Example Documentary'
+HIDDEN_STORY = 'The Hidden Story'
+FIRST_CASE = 'The First Case'
+
+
+@pytest.fixture
+def documentary_matcher():
+    target = _episode(1, 5, HIDDEN_STORY)
+    series = _series(DOCUMENTARY_SHOW, [
+        target,
+        _episode(1, 4, FIRST_CASE),
+    ])
+    return _matcher(series, [target])
+
+
+def test_unnumbered_series_then_episode_title_accepts(documentary_matcher):
+    match = documentary_matcher.match('Example.Documentary.The.Hidden.Story.FR.mp4')
+    assert match.matched is True
+    assert match.method == 'episode_title'
+    assert match.season == 1
+    assert match.episodes == [5]
+
+
+def test_unnumbered_episode_title_then_series_accepts(documentary_matcher):
+    match = documentary_matcher.match('The.Hidden.Story.Example.Documentary.mp4')
+    assert match.matched is True
+    assert match.method == 'episode_title'
+    assert match.episodes == [5]
+
+
+def test_wrong_series_with_requested_episode_title_is_rejected(documentary_matcher):
+    match = documentary_matcher.match('Another.Documentary.The.Hidden.Story.mp4')
+    assert match.matched is False
+    assert match.reason == 'series_not_found'
+
+
+def test_wrong_episode_title_on_requested_series_is_rejected(documentary_matcher):
+    match = documentary_matcher.match('Example.Documentary.The.First.Case.mp4')
+    assert match.matched is False
+    assert match.reason == 'episode_title_not_found'
+
+
+def test_accented_series_and_episode_match_ascii_folded_release():
+    target = _episode(1, 5, 'À la découverte')
+    series = _series('Série Exemple', [target])
+    matcher = _matcher(series, [target])
+    match = matcher.match('Serie.Exemple.A.la.decouverte.mp4')
+    assert match.matched is True
+    assert match.method == 'episode_title'
+
+
+def test_combining_marks_in_release_match_composed_library_titles():
+    target = _episode(1, 5, 'À la découverte')
+    series = _series('Série Exemple', [target])
+    matcher = _matcher(series, [target])
+    combining_grave = '\u0300'
+    combining_acute = '\u0301'
+    nfd_release = (
+        'Se' + combining_acute + 'rie.Exemple.A' + combining_grave + '.la.decouverte.mp4'
+    )
+    assert nfd_release != unicodedata.normalize('NFC', nfd_release)
+    match = matcher.match(nfd_release)
+    assert match.matched is True
+    assert match.method == 'episode_title'
+
+
+def test_apostrophe_variants_match_requested_episode_title():
+    target = _episode(1, 5, 'L\u2019histoire secrète')
+    series = _series(DOCUMENTARY_SHOW, [target])
+    matcher = _matcher(series, [target])
+    match = matcher.match("Example.Documentary.L'histoire.secrete.mp4")
+    assert match.matched is True
+    assert match.method == 'episode_title'
+
+
+def test_colon_punctuation_in_series_title_is_ignored():
+    target = _episode(1, 5, HIDDEN_STORY)
+    series = _series('Example : Documentary', [target])
+    matcher = _matcher(series, [target])
+    match = matcher.match('Example.Documentary.The.Hidden.Story.mp4')
+    assert match.matched is True
+    assert match.method == 'episode_title'
+
+
+def test_prefix_and_suffix_around_contiguous_titles_accepts(documentary_matcher):
+    match = documentary_matcher.match(
+        'Archive.Example.Documentary.The.Hidden.Story.FR.1080p.mp4'
+    )
+    assert match.matched is True
+    assert match.method == 'episode_title'
+
+
+def test_interleaved_series_tokens_are_rejected(documentary_matcher):
+    match = documentary_matcher.match('Example.The.Documentary.Hidden.Story.mp4')
+    assert match.matched is False
+    assert match.reason == 'series_not_found'
+
+
+def test_series_only_unnumbered_release_is_not_the_requested_episode(documentary_matcher):
+    match = documentary_matcher.match('Example.Documentary.FR.mp4')
+    assert match.matched is False
+    assert match.reason == 'episode_title_not_found'
+
+
+def test_episode_title_only_release_is_rejected(documentary_matcher):
+    match = documentary_matcher.match('The.Hidden.Story.FR.mp4')
+    assert match.matched is False
+    assert match.reason == 'series_not_found'
+
+
+def test_explicit_numbering_with_matching_title_is_accepted(documentary_matcher):
+    match = documentary_matcher.match(
+        'Example.Documentary.S01E05.The.Hidden.Story.mp4'
+    )
+    assert match.matched is True
+    assert match.method == 'explicit_numbering'
+    assert match.episodes == [5]
+
+
+def test_explicit_conflicting_numbering_is_not_overridden_by_title(documentary_matcher):
+    match = documentary_matcher.match(
+        'Example.Documentary.S01E04.The.Hidden.Story.mp4'
+    )
+    assert match.matched is False
+    assert match.reason == 'explicit_number_conflict'
+
+
+def test_duplicate_episode_title_in_library_is_ambiguous():
+    episodes = [
+        _episode(1, 5, HIDDEN_STORY),
+        _episode(2, 1, HIDDEN_STORY),
+    ]
+    series = _series(DOCUMENTARY_SHOW, episodes)
+    matcher = _matcher(series, [episodes[0]])
+    match = matcher.match('Example.Documentary.The.Hidden.Story.mp4')
+    assert match.matched is False
+    assert match.reason == 'ambiguous_episode_title'
+
+
+def test_tokens_between_contiguous_series_and_episode_sequences_currently_match(documentary_matcher):
+    # Extra tokens between the two contiguous sequences are currently accepted.
+    # Tightening that leftover belongs in a follow-up, not this PR.
+    match = documentary_matcher.match(
+        'Example.Documentary.Channel.Name.The.Hidden.Story.mp4'
+    )
+    assert match.matched is True
+    assert match.method == 'episode_title'
