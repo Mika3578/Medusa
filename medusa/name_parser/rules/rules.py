@@ -1618,15 +1618,15 @@ class SeasonDashEpisodeNumbers(Rule):
 
         found = None
         for start, end in search_spans:
-            match = self.pattern.search(matches.input_string[start:end])
+            match = self.pattern.search(matches.input_string, start, end)
             if match:
-                found = (start, match)
+                found = match
                 break
 
         if not found:
             return
 
-        offset, match = found
+        match = found
         season_number = int(match.group(1))
         episode_number = int(match.group(2))
 
@@ -1648,16 +1648,16 @@ class SeasonDashEpisodeNumbers(Rule):
         episode = copy.copy(template[0])
         episode.name = 'episode'
         episode.value = episode_number
-        episode.start = offset + match.start(2)
-        episode.end = offset + match.end(2)
+        episode.start = match.start(2)
+        episode.end = match.end(2)
         to_append.append(episode)
 
         if not existing_seasons:
             season = copy.copy(template[0])
             season.name = 'season'
             season.value = season_number
-            season.start = offset + match.start(1)
-            season.end = offset + match.end(1)
+            season.start = match.start(1)
+            season.end = match.end(1)
             to_append.append(season)
 
         for episode_title in matches.named('episode_title'):
