@@ -133,13 +133,15 @@ TOLERANCE_SECONDS = 60  # Acceptable difference for human-time tests
         'fromtimestamp': True
     },
     {  # p22: hd-space test human date like 'yesterday at 12:00:00'
-        'pubdate': 'yesterday at {0}'.format((NOW_UTC - timedelta(minutes=10, seconds=25)).strftime('%H:%M:%S')),
-        'expected': NOW_UTC - timedelta(days=1, minutes=10, seconds=25),
+        # Use a midday clock so the time stays on the intended calendar day
+        # even when CI runs just after UTC midnight.
+        'pubdate': 'yesterday at 12:00:00',
+        'expected': (NOW_UTC - timedelta(days=1)).replace(hour=12, minute=0, second=0),
         'human_time': False
     },
     {  # p23: hd-space test human date like 'today at 12:00:00'
-        'pubdate': 'today at {0}'.format((NOW_UTC - timedelta(minutes=10, seconds=25)).strftime('%H:%M:%S')),
-        'expected': NOW_UTC - timedelta(days=0, minutes=10, seconds=25),
+        'pubdate': 'today at 12:00:00',
+        'expected': NOW_UTC.replace(hour=12, minute=0, second=0),
         'human_time': False
     },
 ])
