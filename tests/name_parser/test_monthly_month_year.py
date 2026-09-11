@@ -92,6 +92,12 @@ MONTHLY_NUMERIC_CASES = [
     ('Show.Name.2016.12', date(2016, 12, 1)),
     ('Show.Name.01.2000', date(2000, 1, 1)),
     ('Show.Name.09.2024.HDTV.x264-GROUP', date(2024, 9, 1)),
+    # Underscore MM_YYYY / YYYY_MM packs
+    ('Show.Name.05_2025.mkv', date(2025, 5, 1)),
+    ('Show.Name.2025_05.mkv', date(2025, 5, 1)),
+    ('Show.Name.5_2025.mkv', date(2025, 5, 1)),
+    ('Show.Name.2025_5.mkv', date(2025, 5, 1)),
+    ('Show.Name.05_2025_720p.mkv', date(2025, 5, 1)),
     # YYYY-MM after title junk / truncated day
     ('Show Name 2012-02 TAG extra.avi', date(2012, 2, 1)),
     ('Show Name [2004-03-0].mpg', date(2004, 3, 1)),
@@ -492,3 +498,35 @@ def test_month_precision_ambiguous_month_returns_empty(monkeypatch, create_tvsho
     )
     result.series = series
     assert NameParser._get_episodes_by_air_date(result) == []
+
+
+@pytest.mark.parametrize('release_name', [
+    'Example.Show.-.Saison.19.-.Episode.Title_Channel.5_2025_07_18_21_00.mp4',
+    'Example.Show.Saison.19.Title_Channel.5_2025_07_18_21_00.mp4',
+    'Example.Show.Saison.19.Title_Channel.7_2025_07_18_21_00.mp4',
+    'Example.Show.Saison.19.Title_Source.10_2023_11_15_14_30.mp4',
+])
+def test_channel_number_before_underscore_timestamp_is_not_month_year(release_name):
+    """A channel/source digit glued into _YYYY_MM_DD_HH_MM is not MM_YYYY."""
+    result = guessit_parser.guessit(release_name, cached=False)
+    assert result.get('date_precision') != 'month'
+    assert result.get('date') != date(2025, 5, 1)
+    assert result.get('date') != date(2025, 7, 1)
+    assert result.get('date') != date(2023, 10, 1)
+    # GuessIt keeps the bare Season/Saison marker; do not strip it for a false pack.
+    assert result.get('season') == 19
+    assert result.get('title') == 'Example Show'
+
+
+def test_underscore_month_year_pack_still_accepted():
+    result = guessit_parser.guessit('Example.Show.05_2025.mkv', cached=False)
+    assert result.get('date') == date(2025, 5, 1)
+    assert result.get('date_precision') == 'month'
+    assert result.get('title') == 'Example Show'
+
+
+def test_underscore_year_month_pack_still_accepted():
+    result = guessit_parser.guessit('Example.Show.2025_05.mkv', cached=False)
+    assert result.get('date') == date(2025, 5, 1)
+    assert result.get('date_precision') == 'month'
+    assert result.get('title') == 'Example Show'

@@ -128,6 +128,8 @@ _MONTH_ONLY_RE = re.compile(
 # Optional spaces around separators cover "(2009 - 10)" style packs.
 # Lookbehind blocks letters/digits/underscore so "Vol_1-2019" and "E02.2010" stay intact.
 # Parenthesized years like "07.(2016)" do not match because '(' is not a date separator.
+# A trailing non-digit allows "05_2025.mkv" / "05_2025_720p", but underscore packs that
+# continue as _DD_DD... (broadcast/DVR stamps) are rejected in Pattern 2 validation.
 _NUMERIC_MONTH_YEAR_RE = re.compile(
     r'(?:^|(?<![0-9A-Za-z_]))'
     r'(?:'
@@ -137,6 +139,10 @@ _NUMERIC_MONTH_YEAR_RE = re.compile(
     r')'
     r'(?:[^0-9]|$)'
 )
+
+# After an underscore-separated MM_YYYY / YYYY_MM, more _digits_digits means the match
+# is only a prefix of a longer numeric stamp (e.g. Channel.5_2025_07_18_21_00).
+_UNDERSCORE_DIGIT_CHAIN_CONTINUATION_RE = re.compile(r'_\d+(?:_\d+)+')
 
 # MM-YY (dash) or MM.YY (dot, 2-digit year). Trailing for dots rejects another
 # dotted number (show titles like 11.22.63) but still allows .mkv extensions.
@@ -229,6 +235,43 @@ def _segment_has_sxxexx(sxxexx_matches, offset, segment):
     return any(match.start < end and match.end > offset for match in sxxexx_matches)
 
 
+def _numeric_month_year_value_end(match):
+    """Return the end index of the month/year values (excluding trailing boundary)."""
+    if match.group('y1') is not None:
+        return match.end('y1')
+    return match.end('m2')
+
+
+def _numeric_month_year_uses_underscore_separator(segment, match):
+    """Return True when the matched MM/YYYY pair is joined by underscores."""
+    if match.group('y1') is not None:
+        separator = segment[match.end('m1'):match.start('y1')]
+    else:
+        separator = segment[match.end('y2'):match.start('m2')]
+    return '_' in separator
+
+
+def _is_underscore_month_year_prefix_of_digit_chain(segment, match):
+    """Reject underscore MM_YYYY/YYYY_MM that continue as a longer digit stamp.
+
+    Example rejected: ``Channel.5_2025_07_18_21_00`` (``5_2025`` is not May 2025).
+    Example kept: ``Show.05_2025.mkv``, ``Show.05_2025_720p.mkv``.
+    """
+    if not _numeric_month_year_uses_underscore_separator(segment, match):
+        return False
+    rest = segment[_numeric_month_year_value_end(match):]
+    return bool(_UNDERSCORE_DIGIT_CHAIN_CONTINUATION_RE.match(rest))
+
+
+def _find_numeric_month_year(segment):
+    """Return the first numeric month/year match that is not a stamp prefix."""
+    for match in _NUMERIC_MONTH_YEAR_RE.finditer(segment):
+        if _is_underscore_month_year_prefix_of_digit_chain(segment, match):
+            continue
+        return match
+    return None
+
+
 def _search_segments(regex, segments, sxxexx_matches, allow_sxxexx=False):
     """Search segments for a month/year pattern, skipping SxxExx segments.
 
@@ -240,6 +283,17 @@ def _search_segments(regex, segments, sxxexx_matches, allow_sxxexx=False):
         if not allow_sxxexx and _segment_has_sxxexx(sxxexx_matches, offset, segment):
             continue
         found = regex.search(segment)
+        if found:
+            return offset, segment, found
+    return None, None, None
+
+
+def _search_numeric_month_year_segments(segments, sxxexx_matches, allow_sxxexx=False):
+    """Like _search_segments for Pattern 2, skipping stamp-prefix false positives."""
+    for offset, segment in segments:
+        if not allow_sxxexx and _segment_has_sxxexx(sxxexx_matches, offset, segment):
+            continue
+        found = _find_numeric_month_year(segment)
         if found:
             return offset, segment, found
     return None, None, None
@@ -510,9 +564,10 @@ class CreateDateFromMonthYearRelease(Rule):
         # --- Pattern 2: adjacent MM.YYYY or YYYY.MM (1 or 2 digit month) ------
         # Skip real SxxExx and anime absolute-episode packs (e.g. Show.-.5.2016),
         # but still handle dash monthly packs mis-parsed as season==year.
+        # Invalid underscore stamp prefixes (Channel.5_2025_07_18_...) never mutate.
         if not has_anime_absolute or season_looks_like_year:
-            offset, segment, numeric = _search_segments(
-                _NUMERIC_MONTH_YEAR_RE, segments, sxxexx_matches,
+            offset, segment, numeric = _search_numeric_month_year_segments(
+                segments, sxxexx_matches,
                 allow_sxxexx=season_looks_like_year,
             )
             if numeric:
