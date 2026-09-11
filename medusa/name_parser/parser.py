@@ -4,6 +4,7 @@
 from __future__ import unicode_literals
 
 import logging
+import os
 import time
 from collections import OrderedDict
 
@@ -25,8 +26,12 @@ from medusa.indexers.exceptions import (
 )
 from medusa.logger.adapters.style import BraceAdapter
 from medusa.name_parser.cache import BaseCache
+from medusa.search.release_matcher import (
+    MIN_EPISODE_TITLE_LENGTH,
+    normalize_release_text,
+)
 
-from six import iteritems
+from six import iteritems, text_type
 
 log = BraceAdapter(logging.getLogger(__name__))
 log.logger.addHandler(logging.NullHandler())
@@ -282,11 +287,59 @@ class NameParser(object):
         new_absolute_numbers = []
 
         ex_season = scene_exceptions.get_season_from_name(result.series, result.series_name) or result.season_number
+        # GuessIt may treat a release year as season (e.g. ``(1991)`` → season 1991).
+        if ex_season is not None and int(ex_season) >= 1900:
+            ex_season = None
         if ex_season is None:
             ex_season = 1
             log.info(
                 "For the show {name} we could not parse a season number. We did match the title, so we'll asume season 1",
                 {'name': result.series.name}
+            )
+
+        # Prefer episode-title identification over parsed episode numbers.
+        # A wrong release number must not win when the title uniquely identifies
+        # the library episode (avoids inversions like ``05 - Episode Title`` -> E05).
+        title_match, title_ambiguous = NameParser._match_episode_by_title(
+            result.series,
+            result.guess.get('episode_title'),
+            preferred_season=ex_season,
+            preferred_episodes=result.episode_numbers,
+        )
+        if title_match is not None:
+            if result.episode_numbers and title_match.episode not in result.episode_numbers:
+                log.info(
+                    'Overriding parsed numbering {parsed} for {series} using episode '
+                    'title {title!r} -> {ep}',
+                    {
+                        'parsed': result.episode_numbers,
+                        'series': result.series.name,
+                        'title': title_match.name,
+                        'ep': episode_num(title_match.season, title_match.episode),
+                    }
+                )
+            else:
+                log.info(
+                    'Resolved {series} by episode title {title!r} to {ep} '
+                    '(episode title takes priority over parsed numbering {parsed})',
+                    {
+                        'series': result.series.name,
+                        'title': title_match.name,
+                        'ep': episode_num(title_match.season, title_match.episode),
+                        'parsed': result.episode_numbers,
+                    }
+                )
+            return [title_match.episode], [title_match.season], []
+
+        if title_ambiguous:
+            raise InvalidNameException(
+                'Episode title {title!r} for {series} matched multiple library episodes '
+                'and parsed numbering {parsed} could not safely disambiguate them. '
+                'Refusing to trust the release number alone.'.format(
+                    title=result.guess.get('episode_title'),
+                    series=result.series.name,
+                    parsed=result.episode_numbers,
+                )
             )
 
         if result.episode_numbers:
@@ -312,6 +365,78 @@ class NameParser(object):
             new_season_numbers.append(ex_season)
 
         return new_episode_numbers, new_season_numbers, new_absolute_numbers
+
+    @staticmethod
+    def _normalize_episode_title(value):
+        """Normalize an episode title for equality comparisons."""
+        return normalize_release_text(value)
+
+    @staticmethod
+    def _match_episode_by_title(series, episode_title, preferred_season=None, preferred_episodes=None):
+        """Match a library episode by title, optionally disambiguated by number.
+
+        Episode titles take priority over parsed numbers when the match is unique.
+        If several episodes share the same title, preferred season/episode numbers
+        are used only to disambiguate among those title matches.
+
+        :return: (episode_or_none, ambiguous)
+        :rtype: tuple[object|None, bool]
+        """
+        if not series or not episode_title:
+            return None, False
+
+        if isinstance(episode_title, (list, tuple)):
+            episode_title = ' '.join(text_type(part) for part in episode_title if part)
+
+        normalized_title = NameParser._normalize_episode_title(episode_title)
+        if len(normalized_title) < MIN_EPISODE_TITLE_LENGTH:
+            return None, False
+
+        try:
+            candidates = series.get_all_episodes()
+        except Exception as error:
+            log.debug(
+                'Unable to load episodes for title matching on {series}: {error}',
+                {'series': series.name, 'error': error}
+            )
+            return None, False
+
+        matches = [
+            episode for episode in candidates
+            if episode.season != 0
+            and NameParser._normalize_episode_title(episode.name) == normalized_title
+        ]
+        if not matches:
+            return None, False
+
+        if len(matches) == 1:
+            return matches[0], False
+
+        preferred_episode_set = set(preferred_episodes or [])
+        narrowed = matches
+        if preferred_episode_set:
+            narrowed = [episode for episode in narrowed if episode.episode in preferred_episode_set]
+        if preferred_season is not None:
+            season_narrowed = [episode for episode in narrowed if episode.season == preferred_season]
+            if len(season_narrowed) == 1:
+                return season_narrowed[0], False
+            if season_narrowed:
+                narrowed = season_narrowed
+
+        if len(narrowed) == 1:
+            return narrowed[0], False
+
+        log.info(
+            'Episode title {title!r} for {series} matched {count} episodes; '
+            'parsed numbering {parsed} could not disambiguate safely',
+            {
+                'title': episode_title,
+                'series': series.name,
+                'count': len(matches),
+                'parsed': list(preferred_episode_set) if preferred_episode_set else None,
+            }
+        )
+        return None, True
 
     @staticmethod
     def _parse_special(result):
@@ -340,10 +465,33 @@ class NameParser(object):
 
         return [], []
 
+    @staticmethod
+    def _display_series_name(name):
+        """Return a single string for log/error output when GuessIt yields a list title."""
+        if name is None:
+            return None
+        if isinstance(name, (list, tuple)):
+            parts = [text_type(part) for part in name if part]
+            return ', '.join(parts) if parts else None
+        return text_type(name)
+
     def _parse_string(self, name):
         guess = guessit.guessit(name, dict(show_type=self.show_type))
 
         result = self.to_parse_result(name, guess)
+
+        log.debug(
+            'Series resolution input={input!r} series_name={series_name!r} title={title!r} '
+            'season={season!r} episode={episode!r}',
+            {
+                'input': name,
+                'series_name': result.series_name,
+                'title': guess.get('title'),
+                'season': result.season_number,
+                'episode': result.episode_numbers,
+            }
+        )
+
         search_series = helpers.get_show(result.series_name, self.try_indexers) if not self.naming_pattern else None
 
         if not search_series and not self.naming_pattern:
@@ -353,14 +501,42 @@ class NameParser(object):
 
             # Only fall back for the exact year alias produced by CreateAliasWithCountryOrYear.
             if title and year and alias == '{title} {year}'.format(title=title, year=year):
+                log.debug(
+                    'Series resolution retrying get_show with title={title!r} after year alias miss',
+                    {'title': title}
+                )
                 candidate = helpers.get_show(title, self.try_indexers)
                 candidate_year = candidate and (candidate.imdb_year or candidate.start_year)
-                if candidate_year == year:
+                if candidate and (not candidate_year or int(candidate_year) == int(year)):
                     search_series = candidate
+                elif candidate:
+                    # Parent-folder years (Show (2001)/...S17E01...) often disagree with the
+                    # indexer start year. Enforce year equality only when the parsed year is
+                    # part of the release basename (Show.Name.2026.S01E01).
+                    basename = os.path.basename(name.replace('\\', '/'))
+                    if str(year) not in basename:
+                        log.debug(
+                            'Series resolution accepting title={title!r} despite folder year '
+                            'mismatch (parsed={parsed_year}, show={show_year})',
+                            {
+                                'title': title,
+                                'parsed_year': year,
+                                'show_year': candidate_year,
+                            }
+                        )
+                        search_series = candidate
 
         # confirm passed in show object indexer id matches result show object indexer id
         series_obj = None if search_series and self.series and search_series.indexerid != self.series.indexerid else search_series
         result.series = series_obj or self.series
+
+        log.debug(
+            'Series resolution get_show result for {series_name!r}: {series}',
+            {
+                'series_name': result.series_name,
+                'series': result.series.name if result.series else None,
+            }
+        )
 
         # if this is a naming pattern test or result doesn't have a show object then return best result
         if not result.series or self.naming_pattern:
@@ -374,12 +550,30 @@ class NameParser(object):
         if result.is_episode_special and not result.episode_numbers:
             new_episode_numbers, new_season_numbers = self._parse_special(result)
 
-        # if we have an air-by-date show and the result is air-by-date,
-        # then get the real season/episode numbers
-        elif result.series.air_by_date and result.is_air_by_date:
+        # Prefer episode-title identification when the release carries a title but no
+        # SxEx: works for air-by-date shows whose filenames use the episode name
+        # (and often a rebroadcast date that is not the indexer airdate).
+        elif (
+            result.guess.get('episode_title')
+            and not result.episode_numbers
+        ):
+            new_episode_numbers, new_season_numbers, new_absolute_numbers = self._parse_series(result)
+            if (
+                not new_episode_numbers
+                and result.series.air_by_date
+                and result.is_air_by_date
+            ):
+                new_episode_numbers, new_season_numbers = self._parse_air_by_date(result)
+
+        # Air-by-date shows still often carry SxxExx plus a rebroadcast date
+        # (e.g. Fr5.2010-01-24). Prefer explicit numbering when present.
+        elif result.series.air_by_date and result.is_air_by_date and not result.episode_numbers:
             new_episode_numbers, new_season_numbers = self._parse_air_by_date(result)
 
-        elif result.series.is_anime or result.is_anime:
+        # Only real anime shows use absolute numbering. GuessIt often sets
+        # absolute_episode for bare `` - 01 - `` tokens on non-anime shows
+        # (e.g. ``Show Name - 01 - Guest``); that must not force anime parsing.
+        elif result.series.is_anime:
             new_episode_numbers, new_season_numbers, new_absolute_numbers = self._parse_anime(result)
 
         else:
@@ -415,13 +609,15 @@ class NameParser(object):
         if new_season_numbers:
             result.season_number = new_season_numbers[0]
 
-        # For anime that we still couldn't get a season, let's assume we should use 1.
-        if result.series.is_anime and result.season_number is None and result.episode_numbers:
+        # Bare episode numbers without a season (e.g. ``Show - 56 - Title``) are
+        # common for single-season shows. GuessIt may also set absolute_episode;
+        # that must not leave season unset for post-processing.
+        if result.season_number is None and result.episode_numbers:
             result.season_number = 1
             log.info(
-                'Unable to parse season number for anime {name}, '
-                'assuming absolute numbered anime with season 1',
-                {'name': result.series.name}
+                'Unable to parse season number for {name}, '
+                'assuming season 1 for episode(s) {episodes}',
+                {'name': result.series.name, 'episodes': result.episode_numbers}
             )
 
         if result.series.is_scene:
@@ -482,8 +678,30 @@ class NameParser(object):
         :type result: ParseResult
         """
         if not result.series:
-            raise InvalidShowException('Unable to match {result.original_name} to a series in your database. '
-                                       'Parser result: {result}'.format(result=result))
+            parsed_name = NameParser._display_series_name(
+                result.series_name or (result.guess.get('title') if result.guess else None)
+            )
+            log.debug(
+                'Series resolution failed for input={input!r} series_name={series_name!r} '
+                'title={title!r} season={season!r} episodes={episodes!r} parser_result={result}',
+                {
+                    'input': result.original_name,
+                    'series_name': result.series_name,
+                    'title': result.guess.get('title') if result.guess else None,
+                    'season': result.season_number,
+                    'episodes': result.episode_numbers,
+                    'result': result,
+                }
+            )
+            if parsed_name:
+                message = 'Unable to resolve parsed show "{0}" to a series in Medusa'.format(parsed_name)
+            else:
+                message = 'Unable to resolve release to a series in Medusa'
+            raise InvalidShowException(
+                message,
+                series_name=parsed_name,
+                input_name=result.original_name,
+            )
 
         log.debug(
             'Matched release {release} to a series in your database: {name} using guessit title: {title}',
@@ -697,4 +915,10 @@ class InvalidNameException(Exception):
 
 
 class InvalidShowException(Exception):
-    """The given show name is not valid."""
+    """The given show name could not be resolved to a series in Medusa."""
+
+    def __init__(self, message, series_name=None, input_name=None):
+        """Keep structured lookup context for post-process diagnostics."""
+        super(InvalidShowException, self).__init__(message)
+        self.series_name = series_name
+        self.input_name = input_name
