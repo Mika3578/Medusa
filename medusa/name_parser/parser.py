@@ -60,9 +60,6 @@ class NameParser(object):
     def _get_episodes_by_air_date(result):
         airdate = result.air_date
         main_db_con = db.DBConnection()
-        sql_result = main_db_con.select(
-            'SELECT season, episode FROM tv_episodes WHERE indexer = ? AND showid = ? AND airdate = ?',
-            [result.series.indexer, result.series.series_id, airdate.toordinal()])
 
         # Month-only scene releases (Mai.2016, 05.2016, ...) do not include the
         # broadcast day. Day=1 on the guessed date is only a placeholder — the
@@ -94,7 +91,9 @@ class NameParser(object):
             # Ambiguous month (0 or 2+ episodes): do not guess.
             return []
 
-        return sql_result
+        return main_db_con.select(
+            'SELECT season, episode FROM tv_episodes WHERE indexer = ? AND showid = ? AND airdate = ?',
+            [result.series.indexer, result.series.series_id, airdate.toordinal()])
 
     def _parse_air_by_date(self, result):
         """
