@@ -37,6 +37,12 @@ STRONG_EPISODE_PATTERNS = [
     ),
 ]
 
+# Season-only markers used as veto/constraint, never as sole acceptance proof.
+EXPLICIT_SEASON_PATTERNS = [
+    re.compile(r'\bseason[ ._-]*(?P<season>\d+)\b', re.IGNORECASE),
+    re.compile(r'\bsaison[ ._-]*(?P<season>\d+)\b', re.IGNORECASE),
+]
+
 SEASON_PACK_PATTERNS = [
     re.compile(r'\bs(?P<season>\d{1,2})[ ._-]*complete\b', re.IGNORECASE),
     re.compile(r'\bseason[ ._-]*(?P<season>\d+)[ ._-]*complete\b', re.IGNORECASE),
@@ -107,6 +113,19 @@ def extract_strong_numbering(release_name):
         match = pattern.search(release_name)
         if match:
             return int(match.group('season')), [int(match.group('episode'))]
+    return None
+
+
+def extract_explicit_season(release_name):
+    """Extract an explicit season-only marker such as Season/Saison N.
+
+    Full season+episode numbering is handled by extract_strong_numbering.
+    A bare season marker is a constraint/veto, not enough to accept a release.
+    """
+    for pattern in EXPLICIT_SEASON_PATTERNS:
+        match = pattern.search(release_name)
+        if match:
+            return int(match.group('season'))
     return None
 
 
@@ -260,6 +279,16 @@ class ReleaseMatcher(object):
                 {'release_name': release_name}
             )
             return ReleaseMatch(matched=False, reason='explicit_number_conflict')
+
+        explicit_season = extract_explicit_season(release_name)
+        if explicit_season is not None:
+            expected_season, _expected_episode = expected_release_numbering(self.series, target)
+            if explicit_season != expected_season:
+                log.debug(
+                    'Rejected release because explicit season conflicts with the requested episode: {release_name}',
+                    {'release_name': release_name}
+                )
+                return ReleaseMatch(matched=False, reason='explicit_season_conflict')
 
         if not title_present:
             if guess_episodes:

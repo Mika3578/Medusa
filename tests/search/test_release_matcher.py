@@ -14,6 +14,7 @@ from medusa.providers.generic_provider import GenericProvider
 from medusa.search.release_matcher import (
     ReleaseMatch,
     ReleaseMatcher,
+    extract_explicit_season,
     extract_strong_numbering,
     has_explicit_non_video_extension,
     is_explicit_season_pack,
@@ -766,3 +767,79 @@ def test_tokens_between_contiguous_series_and_episode_sequences_currently_match(
     )
     assert match.matched is True
     assert match.method == 'episode_title'
+
+
+BROADCAST_SHOW = 'Example Show'
+BROADCAST_EPISODE = 'Requested Episode Title'
+BROADCAST_OTHER_EPISODE = 'Other Episode Title'
+
+
+@pytest.fixture
+def broadcast_matcher():
+    target = _episode(19, 1, BROADCAST_EPISODE)
+    series = _series(BROADCAST_SHOW, [
+        target,
+        _episode(17, 1, BROADCAST_OTHER_EPISODE),
+    ])
+    return _matcher(series, [target])
+
+
+def test_extract_explicit_season():
+    assert extract_explicit_season('Example.Show.-.Saison.19.-.Title.mp4') == 19
+    assert extract_explicit_season('Example.Show.-.Season.17.-.Title.mp4') == 17
+    assert extract_explicit_season('Example.Show.S19E01.Title.mp4') is None
+    assert extract_explicit_season('Example.Show.Requested.Episode.Title.mp4') is None
+
+
+def test_broadcast_saison_and_title_accepts_requested_episode(broadcast_matcher):
+    match = broadcast_matcher.match(
+        'Example Show - Saison 19 - Requested Episode Title_Channel 5_2025_07_18_21_00.mp4'
+    )
+    assert match.matched is True
+    assert match.method == 'episode_title'
+    assert match.season == 19
+    assert match.episodes == [1]
+
+
+def test_broadcast_same_date_wrong_season_and_title_rejected(broadcast_matcher):
+    match = broadcast_matcher.match(
+        'Example Show - Saison 17 - Other Episode Title_Channel 5_2025_07_18_21_50.mp4'
+    )
+    assert match.matched is False
+    assert match.reason == 'explicit_season_conflict'
+
+
+def test_explicit_saison_conflict_not_overridden_by_episode_title(broadcast_matcher):
+    match = broadcast_matcher.match(
+        'Example Show - Saison 17 - Requested Episode Title_Channel 5_2025_07_18_21_00.mp4'
+    )
+    assert match.matched is False
+    assert match.reason == 'explicit_season_conflict'
+
+
+def test_matching_saison_with_requested_title_accepts(broadcast_matcher):
+    match = broadcast_matcher.match(
+        'Example.Show.-.Saison.19.-.Requested.Episode.Title.mp4'
+    )
+    assert match.matched is True
+    assert match.method == 'episode_title'
+    assert match.season == 19
+    assert match.episodes == [1]
+
+
+def test_explicit_sxxeyy_conflict_still_rejected_with_title(broadcast_matcher):
+    match = broadcast_matcher.match(
+        'Example.Show.S19E02.Requested.Episode.Title.mp4'
+    )
+    assert match.matched is False
+    assert match.reason == 'explicit_number_conflict'
+
+
+def test_broadcast_prefix_suffix_around_saison_and_title_accepts(broadcast_matcher):
+    match = broadcast_matcher.match(
+        '[Uploader] Example Show - Saison 19 - Requested Episode Title_Channel 5_2025_07_18_21_00.mp4'
+    )
+    assert match.matched is True
+    assert match.method == 'episode_title'
+    assert match.season == 19
+    assert match.episodes == [1]
