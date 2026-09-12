@@ -288,8 +288,13 @@ class NameParser(object):
 
         ex_season = scene_exceptions.get_season_from_name(result.series, result.series_name) or result.season_number
         # GuessIt may treat a release year as season (e.g. ``(1991)`` → season 1991).
-        if ex_season is not None and int(ex_season) >= 1900:
-            ex_season = None
+        # Season ranges arrive as lists (e.g. S01-04 → [1, 2, 3, 4]); skip those.
+        if ex_season is not None and not isinstance(ex_season, (list, tuple)):
+            try:
+                if int(ex_season) >= 1900:
+                    ex_season = None
+            except (TypeError, ValueError):
+                ex_season = None
         if ex_season is None:
             ex_season = 1
             log.info(
@@ -362,7 +367,10 @@ class NameParser(object):
                 new_episode_numbers.append(episode)
         else:
             # No episode numbers. Treat it like a season pack.
-            new_season_numbers.append(ex_season)
+            if isinstance(ex_season, (list, tuple)):
+                new_season_numbers.extend(ex_season)
+            else:
+                new_season_numbers.append(ex_season)
 
         return new_episode_numbers, new_season_numbers, new_absolute_numbers
 

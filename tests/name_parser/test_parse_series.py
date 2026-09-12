@@ -252,3 +252,25 @@ def test_series_parsing(p, create_tvshow, create_tvepisode, monkeypatch, monkeyp
     expected = p['expected']
 
     assert expected == actual
+
+
+def test_parse_series_accepts_guessit_season_range_without_crash(create_tvshow, create_tvepisode, monkeypatch):
+    """Season ranges (list) must not crash the year-as-season guard."""
+    from medusa.name_parser.parser import ParseResult
+
+    series = create_tvshow(name='Show Name')
+    monkeypatch.setattr(series, 'get_all_episodes', lambda season=None, has_location=False: [])
+    result = ParseResult(
+        guess={'title': 'Show Name', 'season': [1, 2, 3, 4]},
+        original_name='Show.Name.S01-04.1080p.mkv',
+        series_name='Show Name',
+        season_number=[1, 2, 3, 4],
+        episode_numbers=[],
+    )
+    result.series = series
+
+    episodes, seasons, absolutes = NameParser._parse_series(result)
+
+    assert episodes == []
+    assert absolutes == []
+    assert seasons == [1, 2, 3, 4]
