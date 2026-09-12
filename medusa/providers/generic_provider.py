@@ -445,7 +445,8 @@ class GenericProvider(object):
 
             if use_contextual_matching:
                 if not self._apply_contextual_manual_parse(
-                        search_result, series, episodes[0], contextual_matcher):
+                    search_result, series, episodes[0], contextual_matcher
+                ):
                     continue
             else:
                 try:

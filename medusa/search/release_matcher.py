@@ -144,11 +144,13 @@ def guessit_episode_numbers(parsed_result):
     if not parsed_result:
         return []
 
-    episodes = parsed_result.episode_numbers or []
+    episodes = getattr(parsed_result, 'episode_numbers', None) or []
     if episodes:
         return list(episodes)
 
     guess = getattr(parsed_result, 'guess', None) or {}
+    if isinstance(parsed_result, dict):
+        return list(parsed_result.get('episode') or guess.get('episode') or [])
     return list(guess.get('episode') or [])
 
 
@@ -223,7 +225,7 @@ class ReleaseMatcher(object):
     def match(self, release_name, parsed_result=None):
         """Decide whether the release matches the requested episode."""
         if self.target_episode is None:
-            return ReleaseMatch(matched=False, reason='implicit_season_pack')
+            return ReleaseMatch(matched=False, reason='unsupported_target')
 
         if has_explicit_non_video_extension(release_name):
             log.debug(
@@ -237,7 +239,7 @@ class ReleaseMatcher(object):
                 'Rejected unnumbered release instead of treating it as a season pack: {release_name}',
                 {'release_name': release_name}
             )
-            return ReleaseMatch(matched=False, reason='implicit_season_pack')
+            return ReleaseMatch(matched=False, reason='explicit_season_pack')
 
         if not self.matches_series(release_name):
             log.debug(

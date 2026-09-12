@@ -201,7 +201,19 @@ def test_explicit_season_pack_marker_rejected_for_single_episode(alpha_matcher):
     assert is_explicit_season_pack(release) is True
     match = alpha_matcher.match(release)
     assert match.matched is False
-    assert match.reason == 'implicit_season_pack'
+    assert match.reason == 'explicit_season_pack'
+
+
+def test_matcher_without_single_target_uses_unsupported_reason(create_tvshow, create_tvepisode):
+    series = create_tvshow(indexerid=1, name='Alpha Chronicle')
+    episodes = [
+        create_tvepisode(series, 1, 1, name='First Contact'),
+        create_tvepisode(series, 1, 2, name='Second Contact'),
+    ]
+    matcher = ReleaseMatcher(series, episodes)
+    match = matcher.match('Alpha Chronicle - First Contact.mkv')
+    assert match.matched is False
+    assert match.reason == 'unsupported_target'
 
 
 def test_non_video_extension_has_dedicated_rejection_reason(alpha_matcher):
@@ -617,7 +629,7 @@ def test_no_numbering_and_no_title_is_never_a_season_pack(example_show_matcher):
     match = example_show_matcher.match('Example.Show.FR.mp4')
     assert match.matched is False
     assert match.reason == 'episode_title_not_found'
-    assert match.reason != 'implicit_season_pack'
+    assert match.reason not in ('implicit_season_pack', 'explicit_season_pack', 'unsupported_target')
 
 
 DOCUMENTARY_SHOW = 'Example Documentary'

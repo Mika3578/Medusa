@@ -2122,7 +2122,9 @@ class FrenchEpisodeOfTotal(Rule):
                 total = int(parsed.group('total'))
                 if not self._is_episode_of_total(episode_num, total, parsed.group('episode')):
                     continue
-                season_num = int(parsed.group('season')) if parsed.group('season') else None
+                # bare_pattern has no season group; prefix_pattern may leave it unset.
+                season_raw = parsed.groupdict().get('season')
+                season_num = int(season_raw) if season_raw else None
                 marker = candidate
                 break
 
