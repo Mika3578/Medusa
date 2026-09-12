@@ -5,12 +5,14 @@ from __future__ import unicode_literals
 
 import logging
 import os
+import re
 import time
 from collections import OrderedDict
 
 import guessit
 
 from medusa import (
+    app,
     common,
     db,
     helpers,
@@ -26,6 +28,7 @@ from medusa.indexers.exceptions import (
 )
 from medusa.logger.adapters.style import BraceAdapter
 from medusa.name_parser.cache import BaseCache
+from medusa.name_parser.series_name import normalize_series_name_for_comparison
 from medusa.search.release_matcher import (
     MIN_EPISODE_TITLE_LENGTH,
     normalize_release_text,
@@ -483,6 +486,51 @@ class NameParser(object):
             return ', '.join(parts) if parts else None
         return text_type(name)
 
+    @staticmethod
+    def _prefer_longer_library_name(name, series_name, search_series):
+        """Prefer a library show whose longer name is spelled out in the release.
+
+        GuessIt truncates spin-off titles such as ``Show Name(s), Subtitle - 01 - Episode``
+        to ``Show Name`` and the name cache then resolves the parent show. When the
+        release basename contains the full name of a library show that starts with the
+        parsed title, that longer name is the intended series.
+        """
+        if not series_name or not isinstance(series_name, text_type) or not app.showList:
+            return search_series
+
+        parsed = normalize_series_name_for_comparison(series_name)
+        if not parsed:
+            return search_series
+
+        basename = os.path.basename(name.replace('\\', '/'))
+        normalized_release = normalize_series_name_for_comparison(basename)
+        if not normalized_release:
+            return search_series
+
+        best_series = search_series
+        best_length = len(normalize_series_name_for_comparison(search_series.name)) if search_series else len(parsed)
+
+        for candidate in app.showList:
+            candidate_name = normalize_series_name_for_comparison(candidate.name)
+            if len(candidate_name) <= best_length or not candidate_name.startswith(parsed + ' '):
+                continue
+            if not re.search(r'(?:^|\s)' + re.escape(candidate_name) + r'(?:\s|$)', normalized_release):
+                continue
+            best_series = candidate
+            best_length = len(candidate_name)
+
+        if best_series is not search_series:
+            log.debug(
+                'Series resolution preferring {longer!r} over {shorter!r}: '
+                'full name found in release {release!r}',
+                {
+                    'longer': best_series.name,
+                    'shorter': search_series.name if search_series else series_name,
+                    'release': basename,
+                }
+            )
+        return best_series
+
     def _parse_string(self, name):
         guess = guessit.guessit(name, dict(show_type=self.show_type))
 
@@ -533,6 +581,9 @@ class NameParser(object):
                             }
                         )
                         search_series = candidate
+
+        if not self.naming_pattern:
+            search_series = self._prefer_longer_library_name(name, result.series_name, search_series)
 
         # confirm passed in show object indexer id matches result show object indexer id
         series_obj = None if search_series and self.series and search_series.indexerid != self.series.indexerid else search_series

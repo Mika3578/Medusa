@@ -2,7 +2,7 @@
 """Tests for matching parsed series names to shows."""
 from __future__ import unicode_literals
 
-from medusa import helpers
+from medusa import app, helpers
 from medusa.name_parser.parser import NameParser
 
 import guessit
@@ -95,6 +95,39 @@ def test_non_anime_bare_episode_number_uses_series_parser(monkeypatch, create_tv
     assert not parse_anime.called
     assert result.episode_numbers == [1]
     assert result.season_number == 1
+
+
+def test_spin_off_full_name_in_release_beats_parent_show(monkeypatch, create_tvshow):
+    """``Parent(s), Subtitle - 01 - Title`` must resolve to the spin-off, not the parent."""
+    parent = create_tvshow(indexerid=1)
+    parent.name = 'Show Name(s)'
+    spin_off = create_tvshow(indexerid=2)
+    spin_off.name = 'Show Name(s), côté nature'
+    monkeypatch.setattr(app, 'showList', [parent, spin_off])
+    get_show = Mock(return_value=parent)
+    monkeypatch.setattr(helpers, 'get_show', get_show)
+    monkeypatch.setattr(NameParser, '_parse_series', Mock(return_value=([1], [1], [])))
+
+    result = NameParser()._parse_string(
+        'Show Name(s), côté nature - 01 - Episode Title (Fr.2021)[720p]_ARTE.2021-09-06_grp.mkv'
+    )
+
+    assert result.series is spin_off
+    assert get_show.call_args[0][0] == 'Show Name'
+
+
+def test_longer_library_name_not_in_release_keeps_parent(monkeypatch, create_tvshow):
+    parent = create_tvshow(indexerid=1)
+    parent.name = 'Show Name(s)'
+    spin_off = create_tvshow(indexerid=2)
+    spin_off.name = 'Show Name(s), côté nature'
+    monkeypatch.setattr(app, 'showList', [parent, spin_off])
+    monkeypatch.setattr(helpers, 'get_show', Mock(return_value=parent))
+    monkeypatch.setattr(NameParser, '_parse_series', Mock(return_value=([1], [1], [])))
+
+    result = NameParser()._parse_string('Show Name(s) - 01 - Episode Title.mkv')
+
+    assert result.series is parent
 
 
 @pytest.mark.parametrize('parsed_guess', [
