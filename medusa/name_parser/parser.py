@@ -563,7 +563,16 @@ class NameParser(object):
                 )
                 candidate = helpers.get_show(title, self.try_indexers)
                 candidate_year = candidate and (candidate.imdb_year or candidate.start_year)
-                if candidate and (not candidate_year or int(candidate_year) == int(year)):
+                years_match = False
+                if candidate and not candidate_year:
+                    years_match = True
+                elif candidate and candidate_year is not None:
+                    # imdb_year may be a non-numeric string from IMDb metadata.
+                    try:
+                        years_match = int(candidate_year) == int(year)
+                    except (TypeError, ValueError):
+                        years_match = False
+                if candidate and years_match:
                     search_series = candidate
                 elif candidate:
                     # Parent-folder years (Show (2001)/...S17E01...) often disagree with the

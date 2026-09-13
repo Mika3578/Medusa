@@ -35,6 +35,65 @@ def test_year_alias_rejects_title_with_different_year(monkeypatch, create_tvshow
     assert ['Lucky 2026', 'Lucky'] == [call[0][0] for call in get_show.call_args_list]
 
 
+def test_year_alias_accepts_numeric_string_imdb_year(monkeypatch, create_tvshow):
+    series = create_tvshow()
+    series.imdb_info['year'] = '2026'
+    series.start_year = None
+    get_show = Mock(side_effect=[None, series])
+    monkeypatch.setattr(helpers, 'get_show', get_show)
+    monkeypatch.setattr(NameParser, '_parse_series', Mock(return_value=([1], [1], [])))
+
+    result = NameParser()._parse_string('Lucky.2026.S01E01')
+
+    assert result.series is series
+
+
+def test_year_alias_accepts_int_imdb_year(monkeypatch, create_tvshow):
+    series = create_tvshow()
+    series.imdb_info['year'] = 2026
+    series.start_year = None
+    get_show = Mock(side_effect=[None, series])
+    monkeypatch.setattr(helpers, 'get_show', get_show)
+    monkeypatch.setattr(NameParser, '_parse_series', Mock(return_value=([1], [1], [])))
+
+    result = NameParser()._parse_string('Lucky.2026.S01E01')
+
+    assert result.series is series
+
+
+def test_year_alias_non_numeric_imdb_year_does_not_crash(monkeypatch, create_tvshow):
+    """Non-numeric imdb_year must not raise; basename year still blocks the match."""
+    series = create_tvshow()
+    series.imdb_info['year'] = 'N/A'
+    series.start_year = None
+    get_show = Mock(side_effect=[None, series])
+    monkeypatch.setattr(helpers, 'get_show', get_show)
+
+    result = NameParser()._parse_string('Lucky.2026.S01E01')
+
+    assert result.series is None
+
+
+def test_folder_year_alias_accepts_despite_non_numeric_imdb_year(monkeypatch, create_tvshow):
+    """Folder-only year mismatch path must still accept when imdb_year is not numeric."""
+    series = create_tvshow()
+    series.name = "Les Chemins de l'aventure"
+    series.imdb_info['year'] = 'unknown'
+    series.start_year = None
+    get_show = Mock(side_effect=[None, series])
+    monkeypatch.setattr(helpers, 'get_show', get_show)
+    monkeypatch.setattr(NameParser, '_parse_series', Mock(return_value=([1], [17], [])))
+
+    release = (
+        r"D:\Media\TV\Les Chemins de l'aventure (2001)"
+        r"\Les.Chemins.de.laventure.S17"
+        r"\Les.Chemins.De.L.Aventure.S17E01.Title.2023.WEBRip.1080p.x264-Group.mkv"
+    )
+    result = NameParser()._parse_string(release)
+
+    assert result.series is series
+
+
 def test_folder_year_alias_accepts_title_despite_year_mismatch(monkeypatch, create_tvshow):
     """Parent-folder (2001) must not block matching when indexer year differs."""
     series = create_tvshow()

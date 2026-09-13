@@ -2991,7 +2991,7 @@ class FrenchBroadcastEpisodeMarkers(Rule):
         if not found:
             return
 
-        marker_start, marker_end, season_n, episode_n, local_end = found
+        marker_start, marker_end, season_n, episode_n, _ = found
         template = (
             matches.named('season')
             or matches.named('episode')
