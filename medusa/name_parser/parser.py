@@ -562,16 +562,23 @@ class NameParser(object):
                     {'title': title}
                 )
                 candidate = helpers.get_show(title, self.try_indexers)
-                candidate_year = candidate and (candidate.imdb_year or candidate.start_year)
+                candidate_year = None
+                candidate_has_year = False
+                if candidate:
+                    for raw_candidate_year in (candidate.imdb_year, candidate.start_year):
+                        if raw_candidate_year in (None, ''):
+                            continue
+                        candidate_has_year = True
+                        try:
+                            candidate_year = int(raw_candidate_year)
+                            break
+                        except (TypeError, ValueError):
+                            continue
                 years_match = False
-                if candidate and not candidate_year:
+                if candidate and not candidate_has_year:
                     years_match = True
                 elif candidate and candidate_year is not None:
-                    # imdb_year may be a non-numeric string from IMDb metadata.
-                    try:
-                        years_match = int(candidate_year) == int(year)
-                    except (TypeError, ValueError):
-                        years_match = False
+                    years_match = candidate_year == int(year)
                 if candidate and years_match:
                     search_series = candidate
                 elif candidate:

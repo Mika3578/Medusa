@@ -74,6 +74,19 @@ def test_year_alias_non_numeric_imdb_year_does_not_crash(monkeypatch, create_tvs
     assert result.series is None
 
 
+def test_year_alias_falls_back_to_start_year_when_imdb_year_is_non_numeric(monkeypatch, create_tvshow):
+    series = create_tvshow()
+    series.imdb_info['year'] = 'N/A'
+    series.start_year = 2026
+    get_show = Mock(side_effect=[None, series])
+    monkeypatch.setattr(helpers, 'get_show', get_show)
+    monkeypatch.setattr(NameParser, '_parse_series', Mock(return_value=([1], [1], [])))
+
+    result = NameParser()._parse_string('Lucky.2026.S01E01')
+
+    assert result.series is series
+
+
 def test_folder_year_alias_accepts_despite_non_numeric_imdb_year(monkeypatch, create_tvshow):
     """Folder-only year mismatch path must still accept when imdb_year is not numeric."""
     series = create_tvshow()
