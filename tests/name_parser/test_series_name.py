@@ -47,3 +47,12 @@ def test_normalize_preserves_empty():
 def test_optional_plural_normalizes_to_base_title():
     assert normalize_series_name_for_comparison('Show Name(s)') == 'show name'
     assert normalize_series_name_for_comparison('Show Name') == 'show name'
+
+
+def test_strip_optional_plural_marker_only_parentheses():
+    from medusa.name_parser.series_name import strip_optional_plural_marker
+
+    assert strip_optional_plural_marker('Example Place(s)') == 'Example Place'
+    assert strip_optional_plural_marker('Example Place(S)') == 'Example Place'
+    assert strip_optional_plural_marker('Example Places') == 'Example Places'
+    assert strip_optional_plural_marker('Nature Series') == 'Nature Series'

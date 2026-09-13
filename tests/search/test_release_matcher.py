@@ -87,6 +87,45 @@ def test_normalize_and_token_sequence():
     assert tokens_contain_sequence(['beta', 'chronicle'], ['alpha', 'chronicle']) is False
 
 
+def test_normalize_optional_plural_marker():
+    """``(s)`` is an optional plural marker, not a separate token ``s``."""
+    assert normalize_release_text('Example Place(s)') == 'example place'
+    assert normalize_release_text('Example Place(S)') == 'example place'
+    assert normalize_release_text('Example Places') == 'example places'
+    assert normalize_release_text('Nature Series') == 'nature series'
+    assert normalize_to_tokens('Example Place(s)') == ['example', 'place']
+    assert normalize_to_tokens('Example Places') == ['example', 'places']
+
+
+def test_normalize_optional_plural_with_punctuation():
+    assert normalize_release_text('Example.Place(s), Nature') == 'example place nature'
+    assert normalize_release_text('Example Place(s): Nature') == 'example place nature'
+    assert normalize_to_tokens('Example Place(s), Nature') == ['example', 'place', 'nature']
+
+
+def test_normalize_optional_plural_accents_and_apostrophes():
+    assert normalize_release_text("Example Place(s) - L'Eau") == 'example place l eau'
+    assert normalize_release_text('Example Place(s) - Côté') == 'example place cote'
+
+
+def test_matcher_accepts_library_optional_plural_omitted_in_release(create_tvshow, create_tvepisode):
+    series = create_tvshow(indexerid=1, name='Example Place(s)')
+    episode = create_tvepisode(series, 1, 1, name='Nature Episode Name')
+    matcher = ReleaseMatcher(series, [episode])
+
+    match = matcher.match('Example.Place.Nature.Episode.Name.mkv')
+    assert match.matched is True
+
+
+def test_matcher_accepts_release_optional_plural_when_library_omits_it(create_tvshow, create_tvepisode):
+    series = create_tvshow(indexerid=1, name='Example Place')
+    episode = create_tvepisode(series, 1, 1, name='Nature Episode Name')
+    matcher = ReleaseMatcher(series, [episode])
+
+    match = matcher.match('Example.Place(s).Nature.Episode.Name.mkv')
+    assert match.matched is True
+
+
 def test_normalize_punctuation_variants():
     assert normalize_release_text('Alpha, Chronicle') == 'alpha chronicle'
     assert normalize_release_text('Alpha.Series') == 'alpha series'

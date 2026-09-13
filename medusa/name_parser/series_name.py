@@ -13,6 +13,13 @@ from medusa.helpers import full_sanitize_scene_name
 _OPTIONAL_PLURAL = re.compile(r'\([sS]\)')
 
 
+def strip_optional_plural_marker(text):
+    """Remove only the optional ``(s)`` / ``(S)`` marker; leave ordinary plurals intact."""
+    if not text:
+        return text
+    return _OPTIONAL_PLURAL.sub('', text)
+
+
 def normalize_series_name_for_comparison(name):
     """Normalize a series title for equality checks only.
 
@@ -32,5 +39,5 @@ def normalize_series_name_for_comparison(name):
         char for char in decomposed
         if not unicodedata.combining(char)
     )
-    without_optional_plural = _OPTIONAL_PLURAL.sub('', without_marks)
+    without_optional_plural = strip_optional_plural_marker(without_marks)
     return full_sanitize_scene_name(without_optional_plural)

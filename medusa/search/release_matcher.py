@@ -10,6 +10,7 @@ import unicodedata
 
 from medusa import scene_exceptions
 from medusa.logger.adapters.style import BraceAdapter
+from medusa.name_parser.series_name import strip_optional_plural_marker
 
 from six import text_type
 
@@ -77,6 +78,9 @@ def normalize_release_text(text):
 
     text = unicodedata.normalize('NFKD', text_type(text))
     text = ''.join(ch for ch in text if not unicodedata.combining(ch))
+    # Same optional plural contract as series-name comparison: strip "(s)" before
+    # punctuation folding so it does not become a stray "s" token.
+    text = strip_optional_plural_marker(text)
     text = text.replace("'", ' ').replace('\u2019', ' ').replace('`', ' ')
     text = text.casefold()
     text = re.sub(r'[\W_]+', ' ', text, flags=re.UNICODE)
