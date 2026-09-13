@@ -16,6 +16,7 @@ from medusa.search.release_matcher import (
     ReleaseMatcher,
     extract_explicit_season,
     extract_strong_numbering,
+    guessit_episode_numbers,
     has_explicit_non_video_extension,
     is_explicit_season_pack,
     normalize_release_text,
@@ -214,6 +215,33 @@ def test_matcher_without_single_target_uses_unsupported_reason(create_tvshow, cr
     match = matcher.match('Alpha Chronicle - First Contact.mkv')
     assert match.matched is False
     assert match.reason == 'unsupported_target'
+
+
+@pytest.mark.parametrize('parsed, expected', [
+    (None, []),
+    ({'episode': 4}, [4]),
+    ({'episode': [4, 5]}, [4, 5]),
+    ({'episode': None}, []),
+    ({}, []),
+])
+def test_guessit_episode_numbers_normalizes_dict_episode(parsed, expected):
+    assert guessit_episode_numbers(parsed) == expected
+
+
+def test_guessit_episode_numbers_uses_episode_numbers_attr():
+    parsed = Mock(episode_numbers=[2], guess={})
+    assert guessit_episode_numbers(parsed) == [2]
+
+
+def test_guessit_episode_numbers_scalar_episode_numbers_attr():
+    parsed = Mock(episode_numbers=3, guess={})
+    assert guessit_episode_numbers(parsed) == [3]
+
+
+def test_guessit_episode_numbers_from_guess_scalar():
+    parsed = Mock(spec=[])  # no episode_numbers attribute
+    parsed.guess = {'episode': 7}
+    assert guessit_episode_numbers(parsed) == [7]
 
 
 def test_non_video_extension_has_dedicated_rejection_reason(alpha_matcher):

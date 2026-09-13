@@ -144,14 +144,22 @@ def guessit_episode_numbers(parsed_result):
     if not parsed_result:
         return []
 
-    episodes = getattr(parsed_result, 'episode_numbers', None) or []
+    def as_list(value):
+        # GuessIt often returns a bare int for a single episode; list(int) raises TypeError.
+        if value is None:
+            return []
+        if isinstance(value, (list, tuple)):
+            return list(value)
+        return [value]
+
+    episodes = getattr(parsed_result, 'episode_numbers', None)
     if episodes:
-        return list(episodes)
+        return as_list(episodes)
 
     guess = getattr(parsed_result, 'guess', None) or {}
     if isinstance(parsed_result, dict):
-        return list(parsed_result.get('episode') or guess.get('episode') or [])
-    return list(guess.get('episode') or [])
+        return as_list(parsed_result.get('episode') or guess.get('episode'))
+    return as_list(guess.get('episode'))
 
 
 def expected_release_numbering(series, target_episode):
