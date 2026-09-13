@@ -108,19 +108,21 @@ def test_normalize_optional_plural_accents_and_apostrophes():
     assert normalize_release_text('Example Place(s) - Côté') == 'example place cote'
 
 
-def test_matcher_accepts_library_optional_plural_omitted_in_release(create_tvshow, create_tvepisode):
-    series = create_tvshow(indexerid=1, name='Example Place(s)')
-    episode = create_tvepisode(series, 1, 1, name='Nature Episode Name')
-    matcher = ReleaseMatcher(series, [episode])
+def test_matcher_accepts_library_optional_plural_omitted_in_release():
+    series = _series('Example Place(s)', [
+        _episode(1, 1, 'Nature Episode Name'),
+    ])
+    matcher = _matcher(series, [_episode(1, 1, 'Nature Episode Name')])
 
     match = matcher.match('Example.Place.Nature.Episode.Name.mkv')
     assert match.matched is True
 
 
-def test_matcher_accepts_release_optional_plural_when_library_omits_it(create_tvshow, create_tvepisode):
-    series = create_tvshow(indexerid=1, name='Example Place')
-    episode = create_tvepisode(series, 1, 1, name='Nature Episode Name')
-    matcher = ReleaseMatcher(series, [episode])
+def test_matcher_accepts_release_optional_plural_when_library_omits_it():
+    series = _series('Example Place', [
+        _episode(1, 1, 'Nature Episode Name'),
+    ])
+    matcher = _matcher(series, [_episode(1, 1, 'Nature Episode Name')])
 
     match = matcher.match('Example.Place(s).Nature.Episode.Name.mkv')
     assert match.matched is True
