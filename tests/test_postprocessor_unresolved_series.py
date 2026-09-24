@@ -9,7 +9,7 @@ from mock.mock import Mock
 import pytest
 
 
-def test_assert_supported_raises_resolved_show_message():
+def test_assert_supported_raises_unresolved_show_message():
     result = ParseResult(
         guess={'title': 'Show Name', 'season': 17, 'episode': 7},
         original_name='Show Name - 17x07 - Episode Title.ts',
