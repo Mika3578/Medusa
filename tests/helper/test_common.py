@@ -221,11 +221,18 @@ def test_replace_extension(p):
     ('', ''),
     ('filename', 'filename'),
     ('fi\\le/na*me', 'fi-le-na-me'),
-    ('fi:le"na<me', 'filename'),
+    ('fi:le"na<me', 'fi-lename'),
     ('fi>le|na?me', 'filename'),
     (' . file\u2122name. .', 'filename'),
     (' . file\tname. .', 'filename'),
     (' . file\x00as\x08df\x1fname. .', 'fileasdfname'),
+    # smart colon / whitespace (#12244)
+    ('Example show : Special subtitle', 'Example show - Special subtitle'),
+    ('Example:Subtitle', 'Example-Subtitle'),
+    ('Example title\u00a0?', 'Example title'),
+    ('Example l\'enquete avec question ?',
+     'Example l\'enquete avec question'),
+    ('Title  with   spaces', 'Title with spaces'),
 ])
 def test_sanitize_filename(value, expected):
     # Given
