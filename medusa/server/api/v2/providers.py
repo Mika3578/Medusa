@@ -491,6 +491,13 @@ class ProvidersHandler(BaseRequestHandler):
             except (AttributeError, KeyError, ValueError):
                 provider.search_delay = 480
 
+        # Optional per-Torznab response timeout (absent keys preserve existing values).
+        if hasattr(provider, 'search_timeout'):
+            try:
+                provider.search_timeout = provider.normalize_search_timeout(config['search']['timeout'])
+            except (AttributeError, KeyError, TypeError):
+                pass
+
         # Newznab specific
         if hasattr(provider, 'cat_ids'):
             try:
