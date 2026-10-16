@@ -34,7 +34,10 @@ def test_torznab_search_timeout_is_bounded(configured, expected, monkeypatch):
     assert seen[0][1]['params']['t'] == 'search'
 
 
-def test_torznab_timeout_exposed_in_provider_json():
+def test_torznab_timeout_exposed_in_provider_json(monkeypatch):
+    from medusa import app
+
+    monkeypatch.setattr(app, 'THEME_DATA_ROOT', '')
     provider = TorznabProvider('Test Torznab', search_timeout=180)
     assert provider.to_json()['config']['search']['timeout'] == 180
 
