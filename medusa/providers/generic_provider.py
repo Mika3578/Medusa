@@ -989,6 +989,9 @@ class GenericProvider(object):
         if hasattr(self, 'api_key'):
             data['config']['apikey'] = self.api_key
 
+        if hasattr(self, 'search_timeout'):
+            data['config']['search']['timeout'] = self.search_timeout
+
         if hasattr(self, 'custom_url'):
             data['config']['customUrl'] = self.custom_url
 

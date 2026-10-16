@@ -1191,6 +1191,8 @@ class Application(object):
 
                 if isinstance(provider, TorznabProvider):
                     load_provider_setting(app.CFG, provider, 'string', 'url', '', censor_log='normal')
+                    load_provider_setting(app.CFG, provider, 'int', 'search_timeout', 30)
+                    provider.search_timeout = provider.normalize_search_timeout(provider.search_timeout)
                     load_provider_setting(app.CFG, provider, 'list', 'cat_ids', '', split_value=',')
                     load_provider_setting(app.CFG, provider, 'list', 'cap_tv_search', '', split_value=',')
                     load_provider_setting(app.CFG, provider, 'string', 'manager', '')
@@ -1820,7 +1822,7 @@ class Application(object):
                 'all': [
                     'name', 'url', 'cat_ids', 'api_key', 'username', 'search_mode', 'search_fallback',
                     'enable_daily', 'enable_backlog', 'enable_manualsearch', 'enable_search_delay',
-                    'search_delay', 'manager', 'id_manager'
+                    'search_delay', 'search_timeout', 'manager', 'id_manager'
                 ],
                 'encrypted': [
                     'password',
