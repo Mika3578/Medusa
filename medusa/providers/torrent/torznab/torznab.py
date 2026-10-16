@@ -40,7 +40,7 @@ class TorznabProvider(TorrentProvider):
 
     def __init__(self, name, url=None, api_key=None, cat_ids=None, cap_tv_search=None,
                  search_mode='eponly', search_fallback=False, enable_daily=True,
-                 enable_backlog=False, enable_manualsearch=False, manager=None):
+                 enable_backlog=False, enable_manualsearch=False, manager=None, search_timeout=30):
         """Initialize the class."""
         super(TorznabProvider, self).__init__(name)
 
@@ -55,6 +55,7 @@ class TorznabProvider(TorrentProvider):
         self.enable_daily = enable_daily
         self.enable_backlog = enable_backlog
         self.enable_manualsearch = enable_manualsearch
+        self.search_timeout = self.normalize_search_timeout(search_timeout)
 
         # For now apply the additional season search string for all torznab providers.
         # If we want to limited this per provider, I suggest using a dict, with provider: [list of season templates]
@@ -72,6 +73,15 @@ class TorznabProvider(TorrentProvider):
         self.id_manager = self.name
 
         self.cache = tv.Cache(self)
+
+    @staticmethod
+    def normalize_search_timeout(value):
+        """Bound Torznab response timeouts without affecting other providers."""
+        try:
+            timeout = int(value)
+        except (TypeError, ValueError, OverflowError):
+            return 30
+        return max(30, min(timeout, 600))
 
     def search(self, search_strings, age=0, ep_obj=None, force_query=False, manual_search=False, **kwargs):
         """
@@ -143,7 +153,8 @@ class TorznabProvider(TorrentProvider):
                     if search_params['t'] != 'tvsearch':
                         search_params['q'] = search_string
 
-                response = self.session.get(urljoin(self.url, 'api'), params=search_params)
+                response = self.session.get(urljoin(self.url, 'api'), params=search_params,
+                                            timeout=(30, self.normalize_search_timeout(self.search_timeout)))
                 if not response or not response.text:
                     log.debug('No data returned from provider')
                     continue
