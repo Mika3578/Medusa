@@ -72,14 +72,6 @@
                 <p>only download <b>"FreeLeech"</b> torrents.</p>
             </config-toggle-slider>
 
-            <config-textbox-number
-                v-if="'timeout' in editProvider.config.search"
-                v-model="editProvider.config.search.timeout" label="Search response timeout (seconds)"
-                :min="30" :max="600" :step="30" :id="`${editProvider.id}_search_timeout`"
-            >
-                <p>Wait for a slow Torznab response (e.g. aMuTorrent). This does not throttle searches.</p>
-            </config-textbox-number>
-
             <config-toggle-slider v-model="editProvider.config.search.daily.enabled" label="Enable daily searches" :name="`${editProvider.id}_enable_daily`" :id="`${editProvider.id}_enable_daily`">
                 <p>enable provider to perform daily searches.</p>
             </config-toggle-slider>
