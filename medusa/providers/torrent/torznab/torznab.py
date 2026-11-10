@@ -6,6 +6,7 @@ from __future__ import unicode_literals
 
 import logging
 import os
+import re
 from collections import namedtuple
 
 from medusa import (
@@ -83,22 +84,85 @@ class TorznabProvider(TorrentProvider):
             return 30
         return max(30, min(timeout, 600))
 
+    def _cap_tv_params(self):
+        """Return Torznab tv-search capability params as a set."""
+        return {param for param in (self.cap_tv_search or []) if param}
+
+    def _supports_structured_tv_text_search(self):
+        """Whether caps allow Sonarr-like tvsearch with q + season (+ optional ep)."""
+        caps = self._cap_tv_params()
+        return 'q' in caps and 'season' in caps
+
+    def _apply_season_episode_params(self, search_params, ep_obj, mode):
+        """Attach season/ep params from the episode, matching Torznab/Sonarr conventions."""
+        if not ep_obj:
+            return
+
+        if ep_obj.series.air_by_date or ep_obj.series.sports:
+            date_str = str(ep_obj.airdate)
+            search_params['season'] = date_str.partition('-')[0]
+            search_params['ep'] = date_str.partition('-')[2].replace('-', '/')
+        else:
+            search_params['season'] = ep_obj.scene_season
+            search_params['ep'] = ep_obj.scene_episode
+
+        if mode == 'Season':
+            search_params.pop('ep', None)
+
+    @staticmethod
+    def _title_query_from_search_string(search_string):
+        """Strip episode/season markers so Torznab ``q`` is a show title."""
+        title = search_string.strip()
+        patterns = (
+            r'[\s._-]+S\d{1,4}[\s._-]*E\d{1,4}(?:[\s._-]*E\d{1,4})?.*$',
+            r'[\s._-]+\d{1,4}[xX]\d{1,4}.*$',
+            r'[\s._-]+(?:Season|Saison)[\s._-]*\d+.*$',
+            r'[\s._-]+S\d{1,4}$',
+            r'[\s._-]+\d{4}[\s._-]\d{2}[\s._-]\d{2}.*$',
+            r'[\s._-]+\d{4}[\s._-]\d{2}/\d{2}.*$',
+        )
+        for pattern in patterns:
+            title = re.sub(pattern, '', title, flags=re.IGNORECASE)
+        return title.replace('.', ' ').replace('_', ' ').strip()
+
+    def _structured_tv_title_queries(self, search_strings, mode, ep_obj):
+        """Build title-only queries for structured tvsearch (Sonarr-like)."""
+        titles = []
+        if ep_obj and getattr(ep_obj, 'series', None):
+            names = ep_obj.series.get_all_possible_names()
+            if ep_obj.scene_season is not None:
+                names = names.union(ep_obj.series.get_all_possible_names(season=ep_obj.scene_season))
+            titles = sorted(name for name in names if name)
+
+        if titles:
+            return titles
+
+        return [
+            self._title_query_from_search_string(search_string)
+            for search_string in search_strings.get(mode, [])
+            if search_string
+        ]
+
     def search(self, search_strings, age=0, ep_obj=None, force_query=False, manual_search=False, **kwargs):
         """
         Search a provider and parse the results.
 
         :param search_strings: A dict with mode (key) and the search value (value)
         :param age: Not used
-        :param ep_obj: Not used
-        :param force_query: Torznab will by default search using the tvdb/tmdb/imdb id for a show. As a backup it
-        can also search using a query string, like the showtitle with the season/episode number. The force_query
-        parameter can be passed to force a search using the query string.
+        :param ep_obj: Episode object used for season/ep Torznab params
+        :param force_query: Skip indexer-ID tvsearch and force a text query. When the
+            provider caps support ``q``+``season``, use Sonarr-like ``tvsearch`` with a
+            title query; otherwise fall back to free-text ``t=search``.
         :param manual_search: If the search is started through a manual search, we're utilizing the force_query param.
         :returns: A list of search results (structure)
         """
         results = []
         if not self._check_auth():
             return results
+
+        # Keep caps fresh for indexers like aMuTorrent that advertise q,season,ep only.
+        if not self.cap_tv_search:
+            self.get_capabilities(just_params=True)
 
         # Search Params
         search_params = {
@@ -109,65 +173,100 @@ class TorznabProvider(TorrentProvider):
             'cat': ','.join(self.cat_ids),
         }
 
+        used_id_tvsearch = False
+
         for mode in search_strings:
             log.debug('Search mode: {0}', mode)
 
-            if mode != 'RSS':
+            match_indexer = {}
+            use_id_search = False
+            use_structured_text = False
+            query_values = search_strings[mode]
 
+            if mode != 'RSS':
                 match_indexer = self._match_indexer()
-                if match_indexer and not force_query:
+                use_id_search = bool(match_indexer) and not force_query
+                use_structured_text = (
+                    not use_id_search
+                    and self._supports_structured_tv_text_search()
+                    and ep_obj is not None
+                )
+
+                if use_id_search:
                     search_params['t'] = 'tvsearch'
                     search_params.update(match_indexer)
-
-                    if ep_obj.series.air_by_date or ep_obj.series.sports:
-                        date_str = str(ep_obj.airdate)
-                        search_params['season'] = date_str.partition('-')[0]
-                        search_params['ep'] = date_str.partition('-')[2].replace('-', '/')
-                    else:
-                        search_params['season'] = ep_obj.scene_season
-                        search_params['ep'] = ep_obj.scene_episode
+                    self._apply_season_episode_params(search_params, ep_obj, mode)
+                    used_id_tvsearch = True
+                elif use_structured_text:
+                    search_params['t'] = 'tvsearch'
+                    search_params.pop('q', None)
+                    for indexer_param in itervalues(INDEXERS_PARAM):
+                        search_params.pop(indexer_param, None)
+                    self._apply_season_episode_params(search_params, ep_obj, mode)
+                    query_values = self._structured_tv_title_queries(search_strings, mode, ep_obj)
                 else:
                     search_params['t'] = 'search'
+                    search_params.pop('season', None)
+                    search_params.pop('ep', None)
+                    for indexer_param in itervalues(INDEXERS_PARAM):
+                        search_params.pop(indexer_param, None)
 
-            if mode == 'Season':
-                search_params.pop('ep', '')
-
-            for search_string in search_strings[mode]:
+            for search_string in query_values:
+                active_params = dict(search_params)
 
                 if mode != 'RSS':
-                    # If its a PROPER search, need to change param to 'search'
-                    # so it searches using 'q' param
+                    # PROPER/REPACK searches stay free-text so the keyword remains in q.
                     if any(proper_string in search_string
                            for proper_string in self.proper_strings):
-                        search_params['t'] = 'search'
-
-                    log.debug(
-                        'Search show using {search}', {
-                            'search': 'search string: {search_string}'.format(
-                                search_string=search_string if search_params['t'] != 'tvsearch' else
-                                'indexer_id: {indexer_id}'.format(indexer_id=match_indexer)
-                            )
+                        active_params = {
+                            'apikey': self.api_key,
+                            't': 'search',
+                            'limit': 100,
+                            'offset': 0,
+                            'cat': ','.join(self.cat_ids),
+                            'q': search_string,
                         }
-                    )
+                    elif active_params['t'] == 'tvsearch' and use_id_search:
+                        pass
+                    elif active_params['t'] == 'tvsearch':
+                        active_params['q'] = (
+                            search_string
+                            if use_structured_text
+                            else self._title_query_from_search_string(search_string)
+                        )
+                    else:
+                        active_params['q'] = search_string
 
-                    if search_params['t'] != 'tvsearch':
-                        search_params['q'] = search_string
+                    if active_params['t'] == 'tvsearch' and use_id_search:
+                        search_desc = 'indexer_id: {0}'.format(match_indexer)
+                    elif active_params['t'] == 'tvsearch':
+                        search_desc = 'tvsearch q={q!r} season={season!r} ep={ep!r}'.format(
+                            q=active_params.get('q'),
+                            season=active_params.get('season'),
+                            ep=active_params.get('ep'),
+                        )
+                    else:
+                        search_desc = 'search string: {0}'.format(active_params.get('q', search_string))
 
-                response = self.session.get(urljoin(self.url, 'api'), params=search_params,
-                                            timeout=(30, self.normalize_search_timeout(self.search_timeout)))
+                    log.debug('Search show using {search}', {'search': search_desc})
+
+                response = self.session.get(
+                    urljoin(self.url, 'api'),
+                    params=active_params,
+                    timeout=(30, self.normalize_search_timeout(self.search_timeout)),
+                )
                 if not response or not response.text:
                     log.debug('No data returned from provider')
                     continue
 
                 results += self.parse(response.text, mode)
 
-                # Since we aren't using the search string,
-                # break out of the search string loop
-                if any(param in search_params for param in itervalues(INDEXERS_PARAM)):
+                # ID-based tvsearch does not vary by search string.
+                if use_id_search and any(param in active_params for param in itervalues(INDEXERS_PARAM)):
                     break
 
-        # Reprocess but now use force_query = True if there are no results and we already tried a `tvsearch`
-        if not results and search_params['t'] == 'tvsearch' and not force_query:
+        # After a failed ID tvsearch, retry with text query (structured when caps allow).
+        if not results and used_id_tvsearch and not force_query:
             return self.search(search_strings, ep_obj=ep_obj, force_query=True)
 
         return results
