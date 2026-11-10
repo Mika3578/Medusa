@@ -379,7 +379,7 @@ class NameParser(object):
         elif result.series.air_by_date and result.is_air_by_date:
             new_episode_numbers, new_season_numbers = self._parse_air_by_date(result)
 
-        elif result.series.is_anime or result.is_anime:
+        elif result.series.is_anime:
             new_episode_numbers, new_season_numbers, new_absolute_numbers = self._parse_anime(result)
 
         else:
