@@ -145,6 +145,7 @@ def has_explicit_non_video_extension(release_name):
 
 
 def guessit_episode_numbers(parsed_result):
+    """Return the episode numbers of a GuessIt or NameParser result as a list."""
     if not parsed_result:
         return []
 
