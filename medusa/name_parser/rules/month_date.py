@@ -36,6 +36,7 @@ class SafeRemoveMatch(Consequence):
     """
 
     def then(self, matches, when_response, context):  # pylint: disable=unused-argument
+        """Remove the matched items, skipping those already removed."""
         if when_response is None:
             return
         if not isinstance(when_response, (list, tuple)):
@@ -107,6 +108,7 @@ def _compact_alias_month_year_re(aliases):
         r'[\s._-]+(?P<year_short>\d{2})(?![._-]\d)(?:$|[^A-Za-z0-9])'
         r')'
     )
+
 
 # Full air date: "03 juin 2023" / "Emission du 03 juin 2023" / "03 June 2023"
 # Reject YYYY.MM.MonthName (the digits are a month, not a day).
