@@ -54,12 +54,14 @@ def test_torznab_timeout_patch_normalizes_and_preserves_missing_field():
     assert provider.search_timeout == 600
 
 
-def _episode_stub(title='Example Show', season=1, episode=5):
+def _episode_stub(title='Example Show', season=1, episode=5, use_templates=False, aliases=()):
     series = SimpleNamespace(
+        name=title,
         air_by_date=False,
         sports=False,
         anime=False,
-        get_all_possible_names=lambda season=None: {title},
+        use_templates=use_templates,
+        get_all_possible_names=lambda season=None: {title}.union(aliases),
     )
     return SimpleNamespace(
         series=series,
@@ -147,3 +149,93 @@ def test_title_query_strips_episode_markers():
     assert TorznabProvider._title_query_from_search_string('Example.Show.S01E05') == 'Example Show'
     assert TorznabProvider._title_query_from_search_string('Example Show 1x05') == 'Example Show'
     assert TorznabProvider._title_query_from_search_string('Example Show Season 3') == 'Example Show'
+
+
+def _recording_provider(monkeypatch, caps, hits=()):
+    """Torznab provider whose GETs are recorded; queries listed in ``hits`` return one item."""
+    provider = TorznabProvider('aMuTorrent', url='http://localhost/indexer/amule/',
+                               api_key='test', cap_tv_search=caps)
+    seen = []
+
+    def get(url, **kwargs):
+        seen.append(kwargs['params'])
+        if kwargs['params'].get('q') in hits:
+            return SimpleNamespace(text='<rss/>')
+        return None
+
+    monkeypatch.setattr(provider.session, 'get', get)
+    monkeypatch.setattr(provider, 'parse', lambda data, mode: [{'title': 'item'}])
+    return provider, seen
+
+
+def test_torznab_proper_search_keeps_free_text_query(monkeypatch):
+    provider, seen = _recording_provider(monkeypatch, ['q', 'season', 'ep'])
+    query = 'Example Show S01E05 PROPER|REPACK|REAL|RERIP'
+
+    provider.search({'Episode': [query]}, ep_obj=_episode_stub())
+
+    assert len(seen) == 1
+    assert seen[0]['t'] == 'search'
+    assert seen[0]['q'] == query
+
+
+def test_torznab_templates_keep_free_text_query(monkeypatch):
+    provider, seen = _recording_provider(monkeypatch, ['q', 'season', 'ep'])
+
+    provider.search({'Episode': ['Custom.Title.S01E05.1080p']},
+                    ep_obj=_episode_stub(use_templates=True))
+
+    assert len(seen) == 1
+    assert seen[0]['t'] == 'search'
+    assert seen[0]['q'] == 'Custom.Title.S01E05.1080p'
+    assert 'season' not in seen[0]
+    assert 'ep' not in seen[0]
+
+
+def test_torznab_episode_search_requires_ep_cap(monkeypatch):
+    provider, seen = _recording_provider(monkeypatch, ['q', 'season'])
+
+    provider.search({'Episode': ['Example Show S01E05']}, ep_obj=_episode_stub())
+
+    assert len(seen) == 1
+    assert seen[0]['t'] == 'search'
+    assert seen[0]['q'] == 'Example Show S01E05'
+    assert 'ep' not in seen[0]
+
+
+def test_torznab_season_search_without_ep_cap_is_structured(monkeypatch):
+    provider, seen = _recording_provider(monkeypatch, ['q', 'season'])
+
+    provider.search({'Season': ['Example Show S01']}, ep_obj=_episode_stub())
+
+    assert len(seen) == 1
+    assert seen[0]['t'] == 'tvsearch'
+    assert seen[0]['q'] == 'Example Show'
+    assert seen[0]['season'] == 1
+    assert 'ep' not in seen[0]
+
+
+def test_torznab_empty_query_list_sends_no_request(monkeypatch):
+    provider, seen = _recording_provider(monkeypatch, ['q', 'season', 'ep'])
+
+    assert provider.search({'Episode': []}, ep_obj=_episode_stub()) == []
+    assert seen == []
+
+
+def test_torznab_structured_search_stops_at_first_matching_title(monkeypatch):
+    provider, seen = _recording_provider(monkeypatch, ['q', 'season', 'ep'], hits={'Example Show'})
+
+    results = provider.search({'Episode': ['Example Show S01E05']},
+                              ep_obj=_episode_stub(aliases=('Ex Show', 'Example Show US')))
+
+    assert results == [{'title': 'item'}]
+    assert [params['q'] for params in seen] == ['Example Show']
+
+
+def test_torznab_structured_search_tries_aliases_after_primary_title(monkeypatch):
+    provider, seen = _recording_provider(monkeypatch, ['q', 'season', 'ep'], hits={'Ex Show'})
+
+    provider.search({'Episode': ['Example Show S01E05']},
+                    ep_obj=_episode_stub(aliases=('Ex Show', 'Example Show US')))
+
+    assert [params['q'] for params in seen] == ['Example Show', 'Ex Show']

@@ -88,10 +88,34 @@ class TorznabProvider(TorrentProvider):
         """Return Torznab tv-search capability params as a set."""
         return {param for param in (self.cap_tv_search or []) if param}
 
-    def _supports_structured_tv_text_search(self):
-        """Whether caps allow Sonarr-like tvsearch with q + season (+ optional ep)."""
+    def _supports_structured_tv_text_search(self, mode):
+        """Whether caps allow Sonarr-like tvsearch: q + season, plus ep outside season searches."""
         caps = self._cap_tv_params()
-        return 'q' in caps and 'season' in caps
+        if 'q' not in caps or 'season' not in caps:
+            return False
+        return mode == 'Season' or 'ep' in caps
+
+    def _is_proper_search_string(self, search_string):
+        """Whether a search string carries a PROPER/REPACK keyword set by find_propers."""
+        return any(proper_string in search_string for proper_string in self.proper_strings)
+
+    def _use_structured_tv_text_search(self, search_strings, mode, ep_obj):
+        """
+        Decide whether a text search may be replaced by a structured title tvsearch.
+
+        The original free-text queries are kept for PROPER/REPACK searches, for shows
+        using custom search templates and when no query was generated for this mode.
+        """
+        if ep_obj is None or not getattr(ep_obj, 'series', None):
+            return False
+        if not self._supports_structured_tv_text_search(mode):
+            return False
+        if getattr(ep_obj.series, 'use_templates', False):
+            return False
+        queries = [query for query in search_strings.get(mode, []) if query]
+        if not queries:
+            return False
+        return not any(self._is_proper_search_string(query) for query in queries)
 
     def _apply_season_episode_params(self, search_params, ep_obj, mode):
         """Attach season/ep params from the episode, matching Torznab/Sonarr conventions."""
@@ -132,7 +156,9 @@ class TorznabProvider(TorrentProvider):
             names = ep_obj.series.get_all_possible_names()
             if ep_obj.scene_season is not None:
                 names = names.union(ep_obj.series.get_all_possible_names(season=ep_obj.scene_season))
-            titles = sorted(name for name in names if name)
+            primary = getattr(ep_obj.series, 'name', None)
+            # Primary title first, then aliases; the search loop stops at the first hit.
+            titles = sorted((name for name in names if name), key=lambda name: (name != primary, name))
 
         if titles:
             return titles
@@ -188,8 +214,7 @@ class TorznabProvider(TorrentProvider):
                 use_id_search = bool(match_indexer) and not force_query
                 use_structured_text = (
                     not use_id_search
-                    and self._supports_structured_tv_text_search()
-                    and ep_obj is not None
+                    and self._use_structured_tv_text_search(search_strings, mode, ep_obj)
                 )
 
                 if use_id_search:
@@ -216,8 +241,7 @@ class TorznabProvider(TorrentProvider):
 
                 if mode != 'RSS':
                     # PROPER/REPACK searches stay free-text so the keyword remains in q.
-                    if any(proper_string in search_string
-                           for proper_string in self.proper_strings):
+                    if self._is_proper_search_string(search_string):
                         active_params = {
                             'apikey': self.api_key,
                             't': 'search',
@@ -228,12 +252,6 @@ class TorznabProvider(TorrentProvider):
                         }
                     elif active_params['t'] == 'tvsearch' and use_id_search:
                         pass
-                    elif active_params['t'] == 'tvsearch':
-                        active_params['q'] = (
-                            search_string
-                            if use_structured_text
-                            else self._title_query_from_search_string(search_string)
-                        )
                     else:
                         active_params['q'] = search_string
 
@@ -259,10 +277,16 @@ class TorznabProvider(TorrentProvider):
                     log.debug('No data returned from provider')
                     continue
 
-                results += self.parse(response.text, mode)
+                items = self.parse(response.text, mode)
+                results += items
 
                 # ID-based tvsearch does not vary by search string.
                 if use_id_search and any(param in active_params for param in itervalues(INDEXERS_PARAM)):
+                    break
+
+                # Title aliases are alternatives: stop at the first one that matched,
+                # so slow indexers are not queried once per alias.
+                if use_structured_text and items:
                     break
 
         # After a failed ID tvsearch, retry with text query (structured when caps allow).
