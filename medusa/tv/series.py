@@ -920,12 +920,12 @@ class Series(TV):
         episode = try_int(episode, None)
         absolute_number = try_int(absolute_number, None)
 
-        # if we get an anime get the real season and episode
+        # Resolve season/episode from absolute numbering or air date when not passed explicitly.
         if season is None and not episode:
             main_db_con = db.DBConnection()
             sql = None
             sql_args = None
-            if self.is_anime and absolute_number:
+            if absolute_number:
                 sql = (
                     'SELECT season, episode '
                     'FROM tv_episodes '
