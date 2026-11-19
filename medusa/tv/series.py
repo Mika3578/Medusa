@@ -113,6 +113,7 @@ from medusa.subtitles import (
 from medusa.tv.base import Identifier, TV
 from medusa.tv.episode import Episode
 from medusa.tv.indexer import Indexer
+from medusa.tv.local_files import invalidate_local_file_inventory, reconcile_local_files
 
 from six import ensure_text, iteritems, itervalues, string_types, text_type, viewitems
 
@@ -518,15 +519,20 @@ class Series(TV):
 
     @property
     def size(self):
-        """Size of the show on disk."""
-        return helpers.get_size(self.location)
+        """Total recorded episode size, matching episode rows and season totals."""
+        main_db_con = db.DBConnection()
+        result = main_db_con.select(
+            'SELECT COALESCE(SUM(file_size), 0) AS size '
+            'FROM tv_episodes WHERE indexer = ? AND showid = ?',
+            [self.indexer, self.series_id])
+        return int(result[0]['size'])
 
     def show_size(self, pretty=False):
         """
-        Get the size of the show on disk (deprecated).
+        Get the total recorded episode size (deprecated).
 
         :param pretty: True if you want a pretty size. (e.g. 3 GB)
-        :return:  Size of the show on disk.
+        :return:  Total recorded episode size.
         """
         warnings.warn(
             u'Method show_size is deprecated.  Use size property instead.',
@@ -1942,6 +1948,8 @@ class Series(TV):
 
         action = ('delete', 'trash')[app.TRASH_REMOVE_SHOW]
 
+        invalidate_local_file_inventory(self)
+
         # remove self from show list
         app.showList = [x for x in app.showList if x.identifier != self.identifier]
 
@@ -2115,6 +2123,10 @@ class Series(TV):
                     cache_db_con.action(query, params)
                     return True
 
+    def reconcile_local_files(self):
+        """Check local media changes without external metadata or file side effects."""
+        return reconcile_local_files(self)
+
     def refresh_dir(self):
         """Refresh show using its location.
 
@@ -2240,6 +2252,8 @@ class Series(TV):
         if sql_l:
             main_db_con = db.DBConnection()
             main_db_con.mass_action(sql_l)
+
+        invalidate_local_file_inventory(self)
 
     def download_subtitles(self):
         """Download subtitles."""
