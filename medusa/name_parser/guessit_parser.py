@@ -79,7 +79,7 @@ def guessit(name, options=None, cached=True):
     final_options.update(dict(type='episode', implicit=True,
                               episode_prefer_number=final_options.get('show_type') == 'anime',
                               expected_title=get_expected_titles(app.showList),
-                              expected_group=expected_groups,
+                              expected_group=expected_groups + (['clo2'] if final_options.get('contextual_manual') else []),
                               allowed_languages=allowed_languages,
                               allowed_countries=allowed_countries))
 
