@@ -4,6 +4,7 @@
 from __future__ import unicode_literals
 
 import logging
+import re
 import time
 from collections import OrderedDict
 
@@ -30,6 +31,10 @@ from six import iteritems
 
 log = BraceAdapter(logging.getLogger(__name__))
 log.logger.addHandler(logging.NullHandler())
+
+NUMBERED_EPISODE_WITH_PRODUCTION_YEAR = re.compile(
+    r'[ ._]+-[ ._]+(\d{1,3})[ ._]+-[ ._]+[^\\/]+?\([A-Za-z]{2}[ ._]+((?:19|20)\d{2})\)(?![^\\/]*[\\/])'
+)
 
 
 class NameParser(object):
@@ -511,8 +516,8 @@ class NameParser(object):
         :return:
         :rtype: ParseResult
         """
+        season_numbers = helpers.ensure_list(guess.get('season'))
         if not self.allow_multi_season:
-            season_numbers = helpers.ensure_list(guess.get('season'))
             if len(season_numbers) > 1:
                 raise InvalidNameException(
                     "Discarding result. Multi-season detected for '{name}': {guess}"
@@ -524,9 +529,17 @@ class NameParser(object):
                     "Discarding result. Multi-version detected for '{name}': {guess}"
                     .format(name=name, guess=guess))
 
+        episode_numbers = helpers.ensure_list(guess.get('episode'))
+        production = NUMBERED_EPISODE_WITH_PRODUCTION_YEAR.search(name)
+        if production:
+            numbered_episode, production_year = map(int, production.groups())
+            if season_numbers == [production_year] and guess.get('year') == production_year and episode_numbers == [numbered_episode]:
+                # The year in the country annotation is release metadata.
+                season_numbers = []
+
         return ParseResult(guess, original_name=name, series_name=guess.get('alias') or guess.get('title'),
                            season_number=helpers.single_or_list(season_numbers, self.allow_multi_season),
-                           episode_numbers=helpers.ensure_list(guess.get('episode')),
+                           episode_numbers=episode_numbers,
                            ab_episode_numbers=helpers.ensure_list(guess.get('absolute_episode')),
                            air_date=guess.get('date'), release_group=guess.get('release_group'),
                            proper_tags=helpers.ensure_list(guess.get('proper_tag')), version=guess.get('version', -1),
