@@ -440,3 +440,39 @@ def test_create_search_string_anime(p, create_tvshow, create_tvepisode, monkeypa
     actual = search_string['Episode']
 
     assert expected == actual
+
+
+class _MonthParseResult(object):
+    def __init__(self, season_number, episode_numbers):
+        self.season_number = season_number
+        self.episode_numbers = episode_numbers
+
+
+class _MonthSearchResult(object):
+    def __init__(self, parsed_result):
+        self.name = 'Show.Name.Mai.2016.FRENCH.HDTV.x264-GROUP'
+        self.parsed_result = parsed_result
+        self.actual_season = None
+        self.actual_episodes = None
+
+
+def test_month_precision_result_uses_episode_resolved_by_name_parser():
+    """A month-only release resolved to an episode airing mid-month must not be rejected."""
+    search_result = _MonthSearchResult(_MonthParseResult(2016, [5]))
+
+    assert GenericProvider._resolve_month_precision_result(search_result) is True
+    assert search_result.actual_season == 2016
+    assert search_result.actual_episodes == [5]
+
+
+@pytest.mark.parametrize('season_number,episode_numbers', [
+    (None, [5]),
+    (2016, []),
+    (None, []),
+])
+def test_month_precision_result_without_resolved_episode_is_skipped(season_number, episode_numbers):
+    search_result = _MonthSearchResult(_MonthParseResult(season_number, episode_numbers))
+
+    assert GenericProvider._resolve_month_precision_result(search_result) is False
+    assert search_result.actual_season is None
+    assert search_result.actual_episodes is None

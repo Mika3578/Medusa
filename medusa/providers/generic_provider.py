@@ -245,6 +245,29 @@ class GenericProvider(object):
         """
         return self.cache.find_episodes(episodes)
 
+    @staticmethod
+    def _resolve_month_precision_result(search_result):
+        """Use the episode NameParser resolved for a month-only release.
+
+        Month-only releases (Mai.2016, 05.2016) carry a placeholder day 1, while
+        the episode may air later that month. NameParser already resolved the
+        unique episode aired in that month, so an exact-day lookup on the
+        placeholder would wrongly reject a correctly matched release.
+
+        :return: True when the result has a resolved episode, False when it must be skipped.
+        """
+        parsed_result = search_result.parsed_result
+        if parsed_result.season_number is None or not parsed_result.episode_numbers:
+            log.debug(
+                'Unable to resolve a unique episode for the month-only release {0}, skipping it',
+                search_result.name
+            )
+            return False
+
+        search_result.actual_season = int(parsed_result.season_number)
+        search_result.actual_episodes = [int(episode) for episode in parsed_result.episode_numbers]
+        return True
+
     def find_search_results(self, series, episodes, search_mode, forced_search=False, download_current_quality=False,
                             manual_search=False, manual_search_type='episode'):
         """
@@ -399,6 +422,10 @@ class GenericProvider(object):
                         )
                         search_result.result_wanted = False
                         continue
+                    elif search_result.parsed_result.date_precision == 'month':
+                        if not self._resolve_month_precision_result(search_result):
+                            search_result.result_wanted = False
+                            continue
                     else:
                         # Use a query against the tv_episodes table, to match the parsed air_date against.
                         air_date = search_result.parsed_result.air_date.toordinal()
