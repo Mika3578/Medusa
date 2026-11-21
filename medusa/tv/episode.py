@@ -1916,6 +1916,10 @@ class Episode(TV):
         # split off the dirs only, if they exist
         name_groups = re.split(r'[\\/]', pattern)
 
+        # A saved search template can use the title copied from the series display.
+        if self.series.start_year and title == '{0} ({1})'.format(self.series.name, self.series.start_year):
+            title = self.series.name
+
         return sanitize_filename(self._format_pattern(name_groups[-1], multi, anime_type, show_name=title))
 
     def rename(self):

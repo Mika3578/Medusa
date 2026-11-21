@@ -13,6 +13,23 @@ from medusa import app
 import pytest
 
 
+@pytest.mark.parametrize(('title', 'pattern', 'expected'), [
+    ('Example Show (2022)', '%SN S%0SE%0E', 'Example Show S01E04'),
+    ('Example Show (2022)', '%SN %EN', 'Example Show London'),
+    ('Example Show (2022)', '%SN S%0S', 'Example Show S01'),
+    ('Example Show (2022)', '%SN %SY', 'Example Show 2022'),
+    ('Example Alias (2022)', '%SN S%0SE%0E', 'Example Alias (2022) S01E04'),
+    ('Example Show (2010)', '%SN S%0SE%0E', 'Example Show (2010) S01E04'),
+])
+def test_search_template_uses_canonical_title(create_tvshow, create_tvepisode, monkeypatch, title, pattern, expected):
+    """Ignore the generated display suffix while preserving explicit query terms."""
+    monkeypatch.setattr(app, 'NAMING_STRIP_YEAR', False)
+    series = create_tvshow(name='Example Show', start_year=2022)
+    episode = create_tvepisode(series, 1, 4, name='London')
+
+    assert episode.formatted_search_string(pattern, title=title) == expected
+
+
 class SQLiteDBConnection(object):
     """Minimal DBConnection test double for SearchTemplates.
 
