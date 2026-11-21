@@ -3,6 +3,7 @@
 #### New Features
 
 #### Improvements
+- Add a configurable search timeout for Torznab providers, and stop and report searches that time out ([48](https://github.com/Mika3578/Medusa/pull/48))
 
 #### Fixes
 
