@@ -22,6 +22,17 @@ def test_production_year_is_not_an_implicit_season(filename, episode, season):
     assert result.episode_numbers == [episode]
 
 
+def test_production_year_match_stays_within_the_release_filename():
+    """Ignore annotations in directory names and tolerate long separators."""
+    guess = {'title': 'Example Show', 'season': 2022, 'episode': 4, 'year': 2022}
+    parser = NameParser()
+    filename = 'Example Show - 04 - London' + ' ' * 10000 + '(Fr.2022).mkv'
+    folder = 'Example Show - 04 - London (Fr.2022)'
+
+    assert parser.to_parse_result(filename, guess).season_number is None
+    assert parser.to_parse_result(folder + '/Example Show S2022E04.mkv', guess).season_number == 2022
+
+
 @pytest.mark.parametrize('p', [
     # The regular Show uses xem data. To map scene S06E29 to indexer S06E28
     {

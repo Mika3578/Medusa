@@ -32,9 +32,8 @@ from six import iteritems
 log = BraceAdapter(logging.getLogger(__name__))
 log.logger.addHandler(logging.NullHandler())
 
-NUMBERED_EPISODE_WITH_PRODUCTION_YEAR = re.compile(
-    r'[ ._]+-[ ._]+(\d{1,3})[ ._]+-[ ._]+[^\\/]+?\([A-Za-z]{2}[ ._]+((?:19|20)\d{2})\)(?![^\\/]*[\\/])'
-)
+DASH_DELIMITED_EPISODE = re.compile(r'(?<=[ ._])-[ ._]+(\d{1,3})[ ._]+-(?=[ ._])')
+COUNTRY_PRODUCTION_YEAR = re.compile(r'\([A-Za-z]{2}[ ._]+((?:19|20)\d{2})\)')
 
 
 class NameParser(object):
@@ -530,10 +529,11 @@ class NameParser(object):
                     .format(name=name, guess=guess))
 
         episode_numbers = helpers.ensure_list(guess.get('episode'))
-        production = NUMBERED_EPISODE_WITH_PRODUCTION_YEAR.search(name)
-        if production:
-            numbered_episode, production_year = map(int, production.groups())
-            if season_numbers == [production_year] and guess.get('year') == production_year and episode_numbers == [numbered_episode]:
+        filename = name.rsplit('/', 1)[-1].rsplit('\\', 1)[-1]
+        numbered = DASH_DELIMITED_EPISODE.search(filename)
+        if numbered and episode_numbers == [int(numbered[1])]:
+            production = COUNTRY_PRODUCTION_YEAR.search(filename, numbered.end())
+            if production and season_numbers == [int(production[1])] and guess.get('year') == season_numbers[0]:
                 # The year in the country annotation is release metadata.
                 season_numbers = []
 
