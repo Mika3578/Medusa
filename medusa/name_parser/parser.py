@@ -276,12 +276,49 @@ class NameParser(object):
         return new_episode_numbers, new_season_numbers, new_absolute_numbers
 
     @staticmethod
+    def _resolve_seasonless_numbers(result):
+        """
+        Resolve season-less episode numbers through the series' absolute numbering.
+
+        Releases without a season token (e.g. ED2K-style ``Show 14``) usually use show-level numbering.
+        Each number is looked up in the custom scene numbering, XEM and the stored indexer absolute numbers.
+
+        :param result: Guessit parse result object.
+        :return: tuple of indexer episode numbers, indexer season numbers and absolute numbers,
+            or None when at least one number could not be resolved.
+        """
+        absolute_numbers = result.ab_episode_numbers or result.episode_numbers
+
+        new_episode_numbers = []
+        new_season_numbers = []
+        for absolute_number in absolute_numbers:
+            (idx_season, idx_episode) = scene_numbering.get_indexer_numbering(result.series, absolute_number)
+            if idx_season is None or not idx_episode:
+                return None
+
+            new_season_numbers.append(idx_season)
+            new_episode_numbers.append(idx_episode)
+
+        log.debug(
+            'Series {name} resolved season-less numbers {absolute} using absolute numbering: {ep}',
+            {'name': result.series.name, 'absolute': absolute_numbers,
+             'ep': episode_num(new_season_numbers[0], new_episode_numbers[0])}
+        )
+        return new_episode_numbers, new_season_numbers, list(result.ab_episode_numbers)
+
+    @staticmethod
     def _parse_series(result):
         new_episode_numbers = []
         new_season_numbers = []
         new_absolute_numbers = []
 
         ex_season = scene_exceptions.get_season_from_name(result.series, result.series_name) or result.season_number
+
+        if ex_season is None and (result.episode_numbers or result.ab_episode_numbers):
+            resolved = NameParser._resolve_seasonless_numbers(result)
+            if resolved:
+                return resolved
+
         if ex_season is None:
             ex_season = 1
             log.info(
@@ -289,8 +326,10 @@ class NameParser(object):
                 {'name': result.series.name}
             )
 
-        if result.episode_numbers:
-            for episode_number in result.episode_numbers:
+        # Guessit may only return an absolute_episode for season-less releases.
+        episode_numbers = result.episode_numbers or result.ab_episode_numbers
+        if episode_numbers:
+            for episode_number in episode_numbers:
                 season = ex_season
                 episode = episode_number
 
@@ -379,7 +418,7 @@ class NameParser(object):
         elif result.series.air_by_date and result.is_air_by_date:
             new_episode_numbers, new_season_numbers = self._parse_air_by_date(result)
 
-        elif result.series.is_anime or result.is_anime:
+        elif result.series.is_anime:
             new_episode_numbers, new_season_numbers, new_absolute_numbers = self._parse_anime(result)
 
         else:
