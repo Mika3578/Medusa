@@ -2220,6 +2220,20 @@ class FixParentFolderReplacingTitle(Rule):
     priority = POST_PROCESS
     consequence = [RemoveMatch, AppendMatch]
     ends_with_digit = re.compile(r'(_|\W)\d+$')
+    # Codec and audio channel folder tails also end with a separator + digits,
+    # but must not be treated as a title ending with a number.
+    # e.g.: /Show.Name.2023.HDTV.AVC.MKV.AC-3/
+    codec_ending = re.compile(
+        r'(?i)(?<![a-z0-9])'
+        r'(?:'
+        r'E?-?AC-?3'  # AC-3, EAC-3, E-AC-3
+        r'|DD[P+]?-?\d(?:\.\d)?'  # DD5.1, DDP7.1, DD+2.0
+        r'|MPEG-?\d'  # MPEG-2, MPEG-4
+        r'|VC-?1'  # VC-1
+        r'|H\.?26[45]'  # H.264, H.265
+        r'|\d\.\d'  # 2.0, 5.1, 7.1 audio channels
+        r')$'
+    )
 
     def when(self, matches, context):
         """Evaluate the rule.
@@ -2238,12 +2252,16 @@ class FixParentFolderReplacingTitle(Rule):
         episode_title = matches.named('episode_title')
         if episode_title:
             second_part = fileparts[parts_len - 2].value
-            if self.ends_with_digit.search(second_part):
+            if self.ends_with_digit.search(second_part) and not self.codec_ending.search(second_part):
                 title = matches.named('title')
                 if not title:
-                    episode_title[0].name = 'title'
-                    to_append = episode_title
-                    to_remove = None
+                    # Never rename a match in place: rebulk indexes it under its
+                    # current name, and a later RemoveMatch would then remove it
+                    # from the wrong name list. See https://github.com/pymedusa/Medusa/issues/12241
+                    new_title = copy.copy(episode_title[0])
+                    new_title.name = 'title'
+                    to_remove = [episode_title[0]]
+                    to_append = [new_title]
                     return to_remove, to_append
 
                 # Parent folder like "Rugrats Season 1" already matches the title,
@@ -2261,9 +2279,10 @@ class FixParentFolderReplacingTitle(Rule):
                 if second_part.startswith(title[0].value):
                     season = matches.named('season')
                     if season and not second_part.endswith(str(season[-1].initiator.value)):
-                        episode_title[0].name = 'title'
-                        to_append = episode_title
-                        to_remove = title
+                        new_title = copy.copy(episode_title[0])
+                        new_title.name = 'title'
+                        to_remove = list(title) + [episode_title[0]]
+                        to_append = [new_title]
                         return to_remove, to_append
 
 
