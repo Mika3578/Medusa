@@ -4738,3 +4738,53 @@
   release_group: Episode Title
   container: mkv
   type: episode
+
+# A codec/channel folder tail also ends with separator + digits: the parent
+# folder must not be treated as "ending with a number", and the rule must not
+# corrupt rebulk's named-match indexes (https://github.com/pymedusa/Medusa/issues/12241).
+? tv\Capital - Des vacances de rêve 30 % moins chères, oui, c'est vraiment possible ! 2023 French HDTV 720p AVC MKV AC-3\Capital - Des vacances de rêve 30 % moins chères, oui, c'est vraiment possible ! 2023 French HDTV 720p AVC MKV AC-3.mkv
+: alternative_title: Des vacances de rêve
+  audio_codec: AC3
+  container: mkv
+  episode: 30
+  language: fr
+  screen_size: 720p
+  season: 2023
+  source: HDTV
+  title: Capital
+  type: episode
+  video_codec: H.264
+  video_profile: Advanced Video Codec High Definition
+  year: 2023
+
+? /Show.Name.2023.French.HDTV.720p.AVC.MKV.E-AC-3/Show.Name.2023.French.HDTV.720p.AVC.MKV.E-AC-3.mkv
+: audio_codec: Dolby Digital Plus
+  container: mkv
+  language: fr
+  screen_size: 720p
+  source: HDTV
+  title: Show Name
+  type: episode
+  video_codec: H.264
+  video_profile: Advanced Video Codec High Definition
+  year: 2023
+
+? /Show.Name.S01E01.1080p.BluRay.DDP5.1/Show.Name.S01E01.1080p.BluRay.DDP5.1.mkv
+: audio_channels: '5.1'
+  audio_codec: Dolby Digital Plus
+  container: mkv
+  episode: 1
+  screen_size: 1080p
+  season: 1
+  source: Blu-ray
+  title: Show Name
+  type: episode
+
+? /Show.Name.S01E01.1080p.H.264/Show.Name.S01E01.1080p.H.264.mkv
+: container: mkv
+  episode: 1
+  screen_size: 1080p
+  season: 1
+  title: Show Name
+  type: episode
+  video_codec: H.264

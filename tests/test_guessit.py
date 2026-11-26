@@ -8,11 +8,15 @@ import os
 from types import SimpleNamespace
 
 import guessit
+
 import medusa.name_parser.guessit_parser as sut
-from medusa.scene_exceptions import TitleException
 from medusa import app
+from medusa.scene_exceptions import TitleException
+
 import pytest
-from six import binary_type, text_type, iteritems
+
+from six import binary_type, iteritems, text_type
+
 import yaml
 
 __location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
@@ -156,3 +160,110 @@ def test_season_dash_episode_uses_full_string_boundaries(monkeypatch):
     )
 
     assert result is None
+
+
+def build_fix_parent_folder_matches(fileparts, named_matches):
+    """Build a fake Matches object for FixParentFolderReplacingTitle tests."""
+
+    class FakeMarkers(object):
+        def named(self, name):
+            if name == 'path':
+                return fileparts
+            return []
+
+    class FakeMatches(object):
+        def __init__(self):
+            self.markers = FakeMarkers()
+            self._named_matches = named_matches
+
+        def named(self, name):
+            return list(self._named_matches.get(name, []))
+
+    return FakeMatches()
+
+
+def test_fix_parent_folder_replacing_title_copies_match_for_rename():
+    """Renaming the episode title must copy the match, never rename it in place.
+
+    Renaming a match in place leaves it registered under its old name in
+    rebulk's indexes, and a later RemoveMatch then raises
+    ``ValueError: list.remove(x): x not in list``.
+    https://github.com/pymedusa/Medusa/issues/12241
+    """
+    episode_title_match = SimpleNamespace(name='episode_title', value='Funny Show', start=11, end=22)
+    title_match = SimpleNamespace(name='title', value='Comedy', start=1, end=7)
+    fileparts = [
+        SimpleNamespace(value='Comedy 23', start=0, end=9),
+        SimpleNamespace(value='Funny.Show.S4E19.mkv', start=10, end=31),
+    ]
+    named_matches = {
+        'episode_title': [episode_title_match],
+        'title': [title_match],
+        'season': [SimpleNamespace(name='season', value=4, start=9, end=10,
+                                   initiator=SimpleNamespace(value='4'))],
+    }
+
+    to_remove, to_append = rules_module.FixParentFolderReplacingTitle().when(
+        build_fix_parent_folder_matches(fileparts, named_matches),
+        {},
+    )
+
+    assert episode_title_match.name == 'episode_title'
+    assert title_match.name == 'title'
+    assert to_remove == [title_match, episode_title_match]
+    assert len(to_append) == 1
+    assert to_append[0] is not episode_title_match
+    assert to_append[0].name == 'title'
+    assert to_append[0].value == 'Funny Show'
+
+
+def test_fix_parent_folder_replacing_title_without_title_copies_match_for_rename():
+    """Without an existing title, the episode title must still be copied, not renamed in place."""
+    episode_title_match = SimpleNamespace(name='episode_title', value='Funny Show', start=11, end=22)
+    fileparts = [
+        SimpleNamespace(value='Comedy 23', start=0, end=9),
+        SimpleNamespace(value='Funny.Show.S4E19.mkv', start=10, end=31),
+    ]
+    named_matches = {
+        'episode_title': [episode_title_match],
+        'title': [],
+        'season': [],
+    }
+
+    to_remove, to_append = rules_module.FixParentFolderReplacingTitle().when(
+        build_fix_parent_folder_matches(fileparts, named_matches),
+        {},
+    )
+
+    assert episode_title_match.name == 'episode_title'
+    assert to_remove == [episode_title_match]
+    assert len(to_append) == 1
+    assert to_append[0] is not episode_title_match
+    assert to_append[0].name == 'title'
+    assert to_append[0].value == 'Funny Show'
+
+
+def test_fix_parent_folder_replacing_title_ignores_codec_folder_tail():
+    """A codec/channel folder tail is not a folder ending with a number.
+
+    https://github.com/pymedusa/Medusa/issues/12241
+    """
+    episode_title_match = SimpleNamespace(name='episode_title', value='Funny Show', start=11, end=22)
+    fileparts = [
+        SimpleNamespace(value='Capital - Some Title 2023 HDTV AVC MKV AC-3', start=0, end=48),
+        SimpleNamespace(value='Capital.Some.Title.2023.HDTV.AVC.MKV.AC-3.mkv', start=49, end=94),
+    ]
+    named_matches = {
+        'episode_title': [episode_title_match],
+        'title': [SimpleNamespace(name='title', value='Capital', start=0, end=7)],
+        'season': [SimpleNamespace(name='season', value=2023, start=25, end=29,
+                                   initiator=SimpleNamespace(value='2023'))],
+    }
+
+    result = rules_module.FixParentFolderReplacingTitle().when(
+        build_fix_parent_folder_matches(fileparts, named_matches),
+        {},
+    )
+
+    assert result is None
+    assert episode_title_match.name == 'episode_title'
