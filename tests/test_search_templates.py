@@ -9,8 +9,38 @@ from types import SimpleNamespace
 
 import medusa.search_templates as search_templates_module
 from medusa import app
+from medusa.scene_exceptions import TitleException
 
 import pytest
+
+
+@pytest.mark.parametrize(('title', 'pattern', 'expected'), [
+    ('Example Show (2022)', '%SN S%0SE%0E', 'Example Show S01E04'),
+    ('Example Show (2022)', '%SN %EN', 'Example Show London'),
+    ('Example Show (2022)', '%SN S%0S', 'Example Show S01'),
+    ('Example Show (2022)', '%SN %SY', 'Example Show 2022'),
+    ('Example Alias (2022)', '%SN S%0SE%0E', 'Example Alias (2022) S01E04'),
+    ('Example Show (2010)', '%SN S%0SE%0E', 'Example Show (2010) S01E04'),
+    ('Example Show', '%SN S%0SE%0E', 'Example Show S01E04'),
+    (None, '%SN S%0SE%0E', 'Example Show S01E04'),
+])
+def test_search_template_uses_canonical_title(create_tvshow, create_tvepisode, monkeypatch, title, pattern, expected):
+    """Ignore the generated display suffix while preserving explicit query terms."""
+    monkeypatch.setattr(app, 'NAMING_STRIP_YEAR', False)
+    series = create_tvshow(name='Example Show', start_year=2022)
+    episode = create_tvepisode(series, 1, 4, name='London')
+
+    assert episode.formatted_search_string(pattern, title=title) == expected
+
+
+def test_search_template_keeps_alias_matching_display_title(create_tvshow, create_tvepisode, monkeypatch):
+    """Keep an alias that is literally the display title, such as a scene exception."""
+    monkeypatch.setattr(app, 'NAMING_STRIP_YEAR', False)
+    series = create_tvshow(name='Example Show', start_year=2022)
+    series._aliases = {TitleException('Example Show (2022)', -1, series.indexer, series.series_id, False)}
+    episode = create_tvepisode(series, 1, 4, name='London')
+
+    assert episode.formatted_search_string('%SN S%0SE%0E', title='Example Show (2022)') == 'Example Show (2022) S01E04'
 
 
 class SQLiteDBConnection(object):
