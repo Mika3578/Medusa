@@ -13,7 +13,7 @@ from medusa import (
     tv,
 )
 from medusa.bs4_parser import BS4Parser
-from medusa.helper.common import convert_size
+from medusa.helper.common import build_api_url, convert_size
 from medusa.indexers.config import (
     INDEXER_TMDB,
     INDEXER_TVDBV2,
@@ -23,8 +23,6 @@ from medusa.indexers.utils import mappings
 from medusa.logger.adapters.style import BraceAdapter
 from medusa.providers.generic_provider import GenericProvider
 from medusa.providers.torrent.torrent_provider import TorrentProvider
-
-from requests.compat import urljoin
 
 from six import iteritems, itervalues, text_type as str
 
@@ -143,7 +141,7 @@ class TorznabProvider(TorrentProvider):
                     if search_params['t'] != 'tvsearch':
                         search_params['q'] = search_string
 
-                response = self.session.get(urljoin(self.url, 'api'), params=search_params)
+                response = self.session.get(build_api_url(self.url), params=search_params)
                 if not response or not response.text:
                     log.debug('No data returned from provider')
                     continue
@@ -333,7 +331,7 @@ class TorznabProvider(TorrentProvider):
 
         url_params = {'t': 'caps', 'apikey': self.api_key}
 
-        response = self.session.get(urljoin(self.url, 'api'), params=url_params)
+        response = self.session.get(build_api_url(self.url), params=url_params)
         if not response or not response.text:
             message = 'Error getting caps xml for: {0}'.format(self.name)
             log.warning(message)
