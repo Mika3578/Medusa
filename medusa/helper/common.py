@@ -11,6 +11,8 @@ from fnmatch import fnmatch
 
 from medusa import app
 
+from requests.compat import urljoin
+
 from six import PY3, text_type
 
 
@@ -335,6 +337,28 @@ def try_int(candidate, default_value=0):
             stack_trace = traceback.format_stack(limit=10)[:-2]
             log.exception('Casting to int failed.\nStack trace:\n{0}'.format(''.join(stack_trace)))
         return default_value
+
+
+def build_api_url(base_url, api_path='api'):
+    """
+    Build the url of an api endpoint, based on a provider's base url.
+
+    ``urljoin()`` replaces the last path segment of the base url when it does not end with a slash.
+    For example: ``urljoin('http://host/indexer/amule', 'api')`` returns ``http://host/indexer/api``.
+    Normalizing the base url to end with a slash makes sure the configured base path is preserved.
+
+    A base url that already ends with the api path, or that contains a query string, is assumed to
+    already point at the api endpoint and is returned unchanged.
+
+    :param base_url: the base url of the provider, as configured by the user
+    :param api_path: the path of the api endpoint, relative to the base url
+    :return: the url of the api endpoint
+    """
+    base_url = (base_url or '').strip()
+    if not base_url or '?' in base_url or base_url.rstrip('/').endswith('/' + api_path):
+        return base_url
+
+    return urljoin(base_url.rstrip('/') + '/', api_path)
 
 
 def episode_num(season=None, episode=None, numbering='standard'):
