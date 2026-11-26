@@ -533,7 +533,10 @@ class ProcessResult(object):
             for folder in self.IGNORED_FOLDERS:
                 self.delete_folder(os.path.join(path, folder))
 
-            if self.unwanted_files:
+            # Unwanted files are only removed for automatic post-processing, or when
+            # deletion was explicitly requested. For manual runs, move does not imply
+            # permission to remove unrelated files from the source tree.
+            if self.unwanted_files and (proc_type == 'auto' or delete):
                 self.delete_files(path, self.unwanted_files)
 
             if (proc_type != 'manual' and not app.NO_DELETE) or clean_folder:

@@ -1,9 +1,11 @@
 # coding=utf-8
 """Tests for medusa/process_tv.py."""
 from __future__ import unicode_literals
+
 import os
 
 from medusa import app
+from medusa.helper.exceptions import EpisodePostProcessingAbortException, EpisodePostProcessingFailedException
 from medusa.post_processor import PostProcessor
 from medusa.process_tv import PostProcessQueueItem, ProcessResult
 from medusa.schedulers.download_handler import ClientStatusEnum
@@ -575,6 +577,8 @@ base_path: Base path used to create the temporary folder/file structure for the 
 structure: Use a tuple to create test files. Pass a dict in the tuple to create a more advanced
     folder file structure.
 """
+
+
 @pytest.mark.parametrize('p', [
     {   # Resource name given, but not found
         'path': 'media/postprocess/complete',
@@ -761,10 +765,71 @@ def test_process_rejects_directory_non_media_resource(create_structure):
         'process_method': 'copy',
         'unwanted_files': ['show.name.103.hdtv.x264-lol.en.srt']
     },
-    {   # delete is False and process_method move, still delete files
+    {   # delete is False and process_method move, unwanted files should be kept
         'path': 'media/postprocess',
         'proc_type': 'manual',
         'delete': False,
+        'expected': ['show.name.103.hdtv.x264-lol.en.srt',
+                     'show.name.103.hdtv.x264-lol.mkv'],
+        'structure': (
+            'show.name.103.hdtv.x264-lol.mkv',
+            'show.name.103.hdtv.x264-lol.en.srt',
+        ),
+        'process_method': 'move',
+        'unwanted_files': ['show.name.103.hdtv.x264-lol.en.srt']
+    },
+    {   # delete is True and process_method move, unwanted files should be deleted
+        'path': 'media/postprocess',
+        'proc_type': 'manual',
+        'delete': True,
+        'expected': ['show.name.103.hdtv.x264-lol.mkv'],
+        'structure': (
+            'show.name.103.hdtv.x264-lol.mkv',
+            'show.name.103.hdtv.x264-lol.en.srt',
+            'readme.txt',
+        ),
+        'process_method': 'move',
+        'unwanted_files': ['readme.txt', 'show.name.103.hdtv.x264-lol.en.srt']
+    },
+    {   # folder without any video: manual move without delete keeps the file
+        'path': 'media/postprocess',
+        'proc_type': 'manual',
+        'delete': False,
+        'expected': ['notes.txt'],
+        'structure': (
+            'notes.txt',
+        ),
+        'process_method': 'move',
+        'unwanted_files': ['notes.txt']
+    },
+    {   # folder without any video: auto move still removes unwanted files
+        'path': 'media/postprocess',
+        'proc_type': 'auto',
+        'delete': False,
+        'expected': [],
+        'structure': (
+            'notes.txt',
+        ),
+        'process_method': 'move',
+        'unwanted_files': ['notes.txt']
+    },
+    {   # unspecified proc_type with move and delete disabled: unwanted files kept
+        'path': 'media/postprocess',
+        'proc_type': '',
+        'delete': False,
+        'expected': ['show.name.103.hdtv.x264-lol.en.srt',
+                     'show.name.103.hdtv.x264-lol.mkv'],
+        'structure': (
+            'show.name.103.hdtv.x264-lol.mkv',
+            'show.name.103.hdtv.x264-lol.en.srt',
+        ),
+        'process_method': 'move',
+        'unwanted_files': ['show.name.103.hdtv.x264-lol.en.srt']
+    },
+    {   # unspecified proc_type with move and explicit delete: unwanted files deleted
+        'path': 'media/postprocess',
+        'proc_type': '',
+        'delete': True,
         'expected': ['show.name.103.hdtv.x264-lol.mkv'],
         'structure': (
             'show.name.103.hdtv.x264-lol.mkv',
@@ -839,3 +904,68 @@ def test__clean_up(monkeypatch, p, create_structure):
 
     # Then
     assert p['expected'] == expected
+
+
+def test_manual_move_without_delete_keeps_unwanted_files(monkeypatch, create_structure):
+    """Manual post-processing with move must not delete unrelated files when delete is disabled."""
+    # Given
+    test_path = create_structure(
+        'media/postprocess/release',
+        structure=(
+            'show.name.s01e01.720p.webrip.x264-group.mkv',
+            'reference.html',
+            {'docs': (
+                'other.show.s01e02.720p.webrip.x264-group.mkv',
+                'notes.txt',
+            )},
+        )
+    )
+    path = os.path.join(test_path, os.path.normcase('media/postprocess/release'))
+    monkeypatch.setattr(app, 'TV_DOWNLOAD_DIR', os.path.join(test_path, os.path.normcase('media/postprocess')))
+    sut = ProcessResult(path, process_method='move')
+    sut.process_media = Mock(return_value=None)
+
+    # When
+    sut.process(delete_on=False, proc_type='manual')
+
+    # Then
+    assert sut.result is True
+    assert os.path.isfile(os.path.join(path, 'reference.html'))
+    # The docs folder contains a video, so it is processed and its cleanup runs too.
+    assert os.path.isfile(os.path.join(path, 'docs', 'notes.txt'))
+
+
+@pytest.mark.parametrize('exception', [EpisodePostProcessingFailedException, EpisodePostProcessingAbortException])
+def test_manual_move_without_delete_keeps_unwanted_files_on_failure(
+    create_file, monkeypatch, exception
+):
+    """Failed or aborted manual processing must not delete unwanted files either."""
+    # Given
+    video = create_file('downloads/show.name.s01e01.mkv')
+    notes = create_file('downloads/notes.txt')
+    processor = Mock(_output=[], **{'process.side_effect': exception('Processing stopped')})
+    failed_handler = Mock()
+    monkeypatch.setattr('medusa.process_tv.post_processor.PostProcessor', Mock(return_value=processor))
+    monkeypatch.setattr('medusa.process_tv.get_embedded_subtitles', Mock(return_value=set()))
+    monkeypatch.setattr(ProcessResult, 'already_postprocessed', Mock(return_value=False))
+    monkeypatch.setattr(ProcessResult, 'process_failed', failed_handler)
+    item = PostProcessQueueItem(
+        path=os.path.dirname(video), process_method='move', proc_type='manual',
+        process_single_resource=True
+    )
+
+    # When
+    result = item.process_path()
+
+    # Then
+    assert os.path.isfile(notes)
+    assert os.path.isfile(video)
+    if exception is EpisodePostProcessingFailedException:
+        assert result.result is False
+        assert result.succeeded is False
+        assert result.aborted is False
+        failed_handler.assert_called_once_with(os.path.dirname(video))
+    else:
+        assert result.result is True
+        assert result.aborted is True
+        failed_handler.assert_not_called()
