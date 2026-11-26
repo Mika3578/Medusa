@@ -1910,11 +1910,19 @@ class Episode(TV):
         :type multi: bool
         :param anime_type:
         :type anime_type: int
+        :param title:
+        :type title: str
         :return:
         :rtype: str
         """
         # split off the dirs only, if they exist
         name_groups = re.split(r'[\\/]', pattern)
+
+        # A saved search template can use the title copied from the series display.
+        # Keep it when it is also an alias (scene exception), as the year is then explicit.
+        if (self.series.start_year and title == '{name} ({year})'.format(name=self.series.name, year=self.series.start_year)
+                and title not in {alias.title for alias in self.series.aliases}):
+            title = self.series.name
 
         return sanitize_filename(self._format_pattern(name_groups[-1], multi, anime_type, show_name=title))
 
