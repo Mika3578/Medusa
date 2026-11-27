@@ -253,9 +253,9 @@ class SnatchQueue(generic_queue.GenericQueue):
 
     def add_item(self, item):
         """
-        Add a SnatchQueueItem queue item.
+        Add a SnatchQueueItem and return it if accepted.
 
-        @param item: SnatchQueueItem gueue object
+        @param item: SnatchQueueItem queue object
         """
         result = item.search_result
         if getattr(result, 'smart_backlog', False):
@@ -272,10 +272,10 @@ class SnatchQueue(generic_queue.GenericQueue):
                     return
                 item.added = datetime.datetime.utcnow()
                 self.queue.append(item)
-            return
+            return item
         if not self.is_in_queue(item.show, item.segment):
             # backlog searches
-            generic_queue.GenericQueue.add_item(self, item)
+            return generic_queue.GenericQueue.add_item(self, item)
         else:
             log.debug("Not adding item, it's already in the queue")
 
@@ -599,6 +599,8 @@ class BacklogQueueItem(generic_queue.QueueItem):
 
                 if search_result:
                     for result in search_result:
+                        if not self.inProgress or self.stop.is_set():
+                            break
                         # just use the first result for now
                         if result.seeders not in (-1, None) and result.leechers not in (-1, None):
                             log.info(
@@ -628,29 +630,17 @@ class BacklogQueueItem(generic_queue.QueueItem):
 
                         # Add the queue item to the queue
                         snatch_queue = app.manual_snatch_scheduler.action
-                        snatch_queue.add_item(snatch_queue_item)
+                        if not snatch_queue.add_item(snatch_queue_item):
+                            continue
 
-                        if getattr(result, 'smart_backlog', False):
-                            # Wait until the job finishes (including rejection), not while
-                            # success is False — a completed rejection would hang forever.
-                            admitted = (
-                                snatch_queue_item.success is not None
-                                or snatch_queue_item.started
-                                or snatch_queue_item.inProgress
-                                or snatch_queue_item in snatch_queue.queue
-                                or snatch_queue.current_item is snatch_queue_item
-                            )
-                            if admitted:
-                                while (snatch_queue_item.success is None
-                                       or snatch_queue_item.inProgress):
-                                    time.sleep(1)
-                                self.success = bool(snatch_queue_item.success)
-                        else:
-                            self.success = False
-                            while snatch_queue_item.success is False:
-                                if snatch_queue_item.started and snatch_queue_item.success:
-                                    self.success = True
-                                time.sleep(1)
+                        # A queued job is not in progress until its thread starts.
+                        while self.inProgress and (not snatch_queue_item.started or snatch_queue_item.inProgress):
+                            if self.stop.wait(1):
+                                break
+                        if snatch_queue_item.success:
+                            self.success = True
+                        if not self.inProgress or self.stop.is_set():
+                            break
 
                         # give the CPU a break
                         time.sleep(common.cpu_presets[app.CPU_PRESET])

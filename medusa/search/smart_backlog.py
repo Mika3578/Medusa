@@ -28,12 +28,16 @@ def series_key(series):
 
 def content_key(result):
     """Identify magnet content independently of its display name."""
-    if result.url.startswith('magnet:?'):
-        hashes = parse_qs(urlsplit(result.url).query).get('xt', ())
+    return _url_content_key(result.url)
+
+
+def _url_content_key(url):
+    if url and url.startswith('magnet:?'):
+        hashes = parse_qs(urlsplit(url).query).get('xt', ())
         for value in hashes:
             if value.lower().startswith('urn:btih:'):
                 return 'btih', value.lower()
-    return 'url', result.url
+    return 'url', url
 
 
 class SeriesSearch:
@@ -88,17 +92,19 @@ class SeriesSearch:
                 self.active = False
 
 
-def _purge_cache_identifiers(provider, identifiers):
-    """Remove previously cached rows whose content mapping is no longer safe."""
-    identifiers = [identifier for identifier in identifiers if identifier]
-    if not identifiers:
+def _purge_cached_content(provider, content_keys):
+    """Remove cached aliases of content whose mapping is ambiguous."""
+    if not content_keys:
         return
     cache_db = provider.cache._get_db()
-    cache_db.mass_action([
-        ['DELETE FROM [{provider}] WHERE identifier=?'.format(provider=provider.cache.provider_id),
-         [identifier]]
-        for identifier in identifiers
-    ])
+    table = '[{provider}]'.format(provider=provider.cache.provider_id)
+    rows = cache_db.select('SELECT identifier, url FROM ' + table)
+    deletes = [
+        ['DELETE FROM ' + table + ' WHERE identifier=? AND url=?', [row['identifier'], row['url']]]
+        for row in rows if _url_content_key(row['url']) in content_keys
+    ]
+    if deletes:
+        cache_db.mass_action(deletes)
 
 
 def cache_releases(provider, series, items):
@@ -111,13 +117,11 @@ def cache_releases(provider, series, items):
     }
     known = {(episode.season, episode.episode) for episode in series.get_all_episodes()}
     mappings = {}
-    content_identifiers = {}
     conflicting_content = set()
     matches = []
     for item in items:
         result = provider.get_result(series, item=item)
         content = content_key(result)
-        content_identifiers.setdefault(content, set()).add(result.identifier)
         try:
             parsed = parser.parse(result.name, cache_result=False, use_cache=False)
         except (InvalidNameException, InvalidShowException):
@@ -148,11 +152,7 @@ def cache_releases(provider, series, items):
     ambiguous_content = {
         content for content, targets in mappings.items() if len(targets) != 1
     } | conflicting_content
-    _purge_cache_identifiers(
-        provider,
-        {identifier for content in ambiguous_content
-         for identifier in content_identifiers.get(content, ())},
-    )
+    _purge_cached_content(provider, ambiguous_content)
 
     entries = {}
     for content, result, parsed in matches:

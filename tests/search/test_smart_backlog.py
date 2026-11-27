@@ -11,7 +11,7 @@ from medusa import app, db, name_cache
 from medusa.common import DOWNLOADED, Quality, SNATCHED, WANTED
 from medusa.providers.torrent.torznab.torznab import TorznabProvider
 from medusa.search import core, smart_backlog
-from medusa.search.queue import SnatchQueue, SnatchQueueItem
+from medusa.search.queue import BacklogQueueItem, SnatchQueue, SnatchQueueItem
 from medusa.server.api.v2.providers import ProvidersHandler
 
 import pytest
@@ -298,8 +298,8 @@ def test_queue_deduplicates_content_and_rechecks_status(provider, library, monke
     for result in (first, second):
         monkeypatch.setattr(result.episodes[0], 'to_json', lambda: {})
     first_job, second_job = [SnatchQueueItem(show, result.episodes, result) for result in (first, second)]
-    queue.add_item(first_job)
-    queue.add_item(second_job)
+    assert queue.add_item(first_job) is first_job
+    assert queue.add_item(second_job) is None
     assert queue.queue == [first_job]
     queue.current_item = queue.queue.pop()
     queue.add_item(second_job)
@@ -441,73 +441,71 @@ def test_run_reports_skipped_work(provider, library, monkeypatch):
     assert provider.search_backlog_title.call_count == 1
 
 
-def test_backlog_does_not_wait_forever_on_rejected_smart_snatch(provider, library, monkeypatch):
-    """A completed smart rejection must not leave BacklogQueueItem waiting on success=False."""
-    from medusa.search.queue import BacklogQueueItem
-
+@pytest.mark.parametrize('smart', [True, False])
+def test_backlog_waits_only_for_accepted_snatches(smart, provider, library, monkeypatch):
+    """Preserve a successful snatch through a duplicate and a later failed snatch."""
     show, segments = library
-    episode = segments[1][0]
-    result = Mock(
-        name='Cash.Investigation.S01E01.HDTV.XviD-GRP',
-        url='magnet:?xt=urn:btih:{0:040x}'.format(1),
-        smart_backlog=True,
-        series=show,
-        episodes=[episode],
-        quality=Quality.SDTV,
-        seeders=5,
-        leechers=1,
-        size=1000,
-        provider=provider,
-        search_type=None,
-    )
-    monkeypatch.setattr(show, 'paused', False)
     monkeypatch.setattr(show, 'to_json', lambda: {})
-    monkeypatch.setattr(episode, 'to_json', lambda: {})
-    monkeypatch.setattr(result, 'to_json', lambda: {})
-    monkeypatch.setattr('medusa.search.queue.search_providers', lambda *args, **kwargs: [result])
-    monkeypatch.setattr(smart_backlog, 'eligible_result', lambda *_: False)
-    snatch = Mock()
+    results = []
+    for episode in segments[1][:2]:
+        monkeypatch.setattr(episode, 'to_json', lambda: {})
+        results.append(Mock(
+            url=f'magnet:?xt=urn:btih:{episode.episode:040x}', smart_backlog=smart,
+            series=show, episodes=[episode], seeders=5, leechers=1, size=1000, provider=provider,
+        ))
+
+    first, second = results
+    snatch_queue = SnatchQueue()
+    duplicate = SnatchQueueItem(show, second.episodes, second)
+    snatch_queue.add_item(duplicate)
+    monkeypatch.setattr(app, 'manual_snatch_scheduler', Mock(action=snatch_queue))
+    monkeypatch.setattr('medusa.search.queue.search_providers', Mock(return_value=[second, first, second]))
+    monkeypatch.setattr('medusa.search.queue.common.cpu_presets', {app.CPU_PRESET: 0})
+    monkeypatch.setattr(smart_backlog, 'eligible_result', lambda *_: True)
+    snatch = Mock(side_effect=[True, False])
     monkeypatch.setattr('medusa.search.queue.snatch_result', snatch)
 
-    class ImmediateSnatchQueue(object):
-        def __init__(self):
-            self.queue = []
-            self.current_item = None
-            self.lock = __import__('threading').Lock()
-            self.history = []
+    backlog = BacklogQueueItem(show, [ep for result in results for ep in result.episodes])
 
-        def add_item(self, item):
-            self.current_item = item
-            item.start()
-            item.join(5)
-            self.history.append(item)
-            self.current_item = None
+    def process_snatch(_timeout):
+        # The duplicate was rejected. Process only the new job the backlog is waiting for.
+        queued = [job for job in snatch_queue.queue if job is not duplicate]
+        assert len(queued) == 1
+        if duplicate in snatch_queue.queue:
+            snatch_queue.queue.remove(duplicate)
+        snatch_queue.run()
+        job = snatch_queue.current_item
+        job.join(5)
+        assert not job.is_alive()
+        return False
 
-    snatch_queue = ImmediateSnatchQueue()
-    monkeypatch.setattr(app, 'manual_snatch_scheduler', Mock(action=snatch_queue))
-    monkeypatch.setattr('medusa.search.queue.common.cpu_presets', {app.CPU_PRESET: 0})
-
-    item = BacklogQueueItem(show, [episode])
-    item.start()
-    item.join(5)
-    assert item.success is False
-    snatch.assert_not_called()
-    assert snatch_queue.history and snatch_queue.history[0].success is False
+    wait = Mock(side_effect=process_snatch)
+    monkeypatch.setattr(backlog.stop, 'wait', wait)
+    backlog.run()
+    assert backlog.success is True
+    assert wait.call_count == snatch.call_count == 2
+    assert [job.success for job in snatch_queue.history] == [True, False]
 
 
 def test_conflicting_content_invalidates_previous_cache_row(provider, library):
-    """Ambiguous remapping of previously cached content must drop the old row."""
-    show, _ = library
-    first = provider.parse(feed([('Cash.Investigation.S01E01.HDTV.XviD-GRP', 9)]), 'RSS')
-    assert smart_backlog.cache_releases(provider, show, first) == (1, 1)
-    assert provider.search_results_in_cache([show.get_episode(1, 1)])[1]
+    """Drop an older cache alias absent from the conflicting response."""
+    show, segments = library
+    first = provider.parse(feed([
+        ('Cash.Investigation.S01E01.HDTV.XviD-OLD', 9),
+        ('Cash.Investigation.S01E02.HDTV.XviD-GRP', 10),
+    ]), 'RSS')
+    episodes = segments[1][:2]
+    assert smart_backlog.cache_releases(provider, show, first) == (2, 2)
+    assert set(smart_backlog.segment_candidates(provider, show, episodes, core.filter_results)[0]) == {1, 2}
 
     conflict = provider.parse(feed([
         ('Cash.Investigation.S01E01.HDTV.XviD-GRP', 9),
         ('Cash.Investigation.S02E01.HDTV.XviD-GRP', 9),
     ]), 'RSS')
     assert smart_backlog.cache_releases(provider, show, conflict) == (2, 0)
-    assert provider.search_results_in_cache([show.get_episode(1, 1)]) == {}
+    candidates, missing = smart_backlog.segment_candidates(provider, show, episodes, core.filter_results)
+    assert set(candidates) == {2}
+    assert missing == {(1, 1)}
     assert provider.search_results_in_cache([show.get_episode(2, 1)]) == {}
 
 
