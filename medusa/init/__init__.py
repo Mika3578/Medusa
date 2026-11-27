@@ -41,8 +41,8 @@ def initialize():
 
 
 def _check_python_version():
-    if sys.version_info < (3, 10):
-        print('Sorry, requires Python 3.10 and above')
+    if sys.version_info < (3, 11):
+        print('Sorry, requires Python 3.11 and above')
         sys.exit(1)
 
 
