@@ -11,7 +11,6 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   build:
@@ -40,9 +39,9 @@ jobs:
       run: |
         uv add --refresh -r requirements.txt
         uv add --refresh -r test_requirements.txt
-    - name: Test with tox
-      run: uv run python setup.py test -a 'tests -vv --cov=medusa --cov-report=xml'
+    - name: Test with pytest
+      run: uv run pytest tests -vv --cov=medusa --cov-report=xml
     - name: Run Flake8
-      run: uv run python setup.py test -a 'medusa --flake8 --cache-clear'
+      run: uv run pytest medusa --flake8 --cache-clear
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1

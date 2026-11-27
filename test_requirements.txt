@@ -8,12 +8,18 @@ flake8-import-order==0.19.2
 flake8-quotes==3.4.0
 packaging==25.0
 pep8-naming==0.15.1
+# pytest-tornado 0.8.1 imports pkg_resources, which setuptools removed in
+# 82.0.0. Every pkg_resources capable release is also inside the affected
+# range of SNYK-PYTHON-SETUPTOOLS-21689156 (fixed in 84.1.0), so the pin
+# stays until pytest-tornado stops using pkg_resources.
+setuptools==68.0.0
+# Cap kept until pytest-flake8 drops the deprecated `path` argument of
+# pytest_collect_file, which pytest 9 removed from the hookspec.
 pytest>=8.4.2,<9.0.0
 pytest-cov==7.0.0
 pytest-flake8==1.3.0
 pytest-tornado==0.8.1
 PyYAML==6.0.3
-setuptools==68.0.0
 six==1.17.0
 tox
 tox-gh-actions
