@@ -116,3 +116,39 @@ def test_parse_info(p, monkeypatch, parse_method):
         'quality': quality,
         'version': version,
     }
+
+
+@pytest.mark.parametrize(('seasons', 'expected_season'), [
+    ([1], 1),  # A single season series uses the existing season 1 fallback.
+    ([1, 2], None),  # The episode stays unresolved instead of being assigned to season 1.
+])
+def test_find_info_production_year_release(seasons, expected_season, create_tvshow, monkeypatch):
+    """A country production year does not become a season or force season 1 in post-processing."""
+    import sqlite3
+    from unittest.mock import Mock
+
+    from medusa import helpers, post_processor, scene_exceptions, scene_numbering
+
+    connection = sqlite3.connect(':memory:')
+    connection.row_factory = sqlite3.Row
+    connection.execute('CREATE TABLE tv_episodes (indexer INTEGER, showid INTEGER, season INTEGER, episode INTEGER)')
+    series = create_tvshow(indexerid=99, name='Example Show')
+    connection.executemany('INSERT INTO tv_episodes VALUES (?, ?, ?, ?)',
+                           [(series.indexer, series.series_id, season, 4) for season in seasons])
+    database = Mock()
+    database.select.side_effect = lambda query, args=None: [
+        dict(row) for row in connection.execute(query, args or []).fetchall()
+    ]
+    monkeypatch.setattr(post_processor.db, 'DBConnection', Mock(return_value=database))
+    monkeypatch.setattr(helpers, 'get_show', lambda *args, **kwargs: series)
+    monkeypatch.setattr(scene_exceptions, 'get_season_from_name', lambda *args, **kwargs: None)
+    monkeypatch.setattr(scene_numbering, 'get_indexer_numbering', lambda *args, **kwargs: (None, None))
+    monkeypatch.setattr(scene_numbering, 'get_indexer_abs_numbering', lambda *args, **kwargs: None)
+    monkeypatch.setattr(helpers, 'get_all_episodes_from_absolute_number', lambda *args, **kwargs: (None, []))
+
+    sut = PostProcessor(file_path='/media/postprocess/Example Show - 04 - London (Fr.2022).mkv')
+    found_series, season, episodes, _, _ = sut._find_info()
+
+    assert found_series is series
+    assert season == expected_season
+    assert episodes == [4]
