@@ -7,6 +7,7 @@ from __future__ import unicode_literals
 import logging
 import os
 from collections import namedtuple
+from xml.etree import ElementTree
 
 from medusa import (
     app,
@@ -23,14 +24,21 @@ from medusa.indexers.utils import mappings
 from medusa.logger.adapters.style import BraceAdapter
 from medusa.providers.generic_provider import GenericProvider
 from medusa.providers.torrent.torrent_provider import TorrentProvider
+from medusa.search.smart_backlog import SeriesSearch
+from medusa.session.core import ProviderSession
 
 from requests.compat import urljoin
+from requests.exceptions import HTTPError, RequestException, Timeout
 
 from six import iteritems, itervalues, text_type as str
 
 
 log = BraceAdapter(logging.getLogger(__name__))
 log.logger.addHandler(logging.NullHandler())
+
+MAX_BACKLOG_PAGES = 5
+RESPONSE_TAGS = ('{http://torznab.com/schemas/2015/feed}response',
+                 '{http://www.newznab.com/DTD/2010/feeds/attributes/}response')
 
 INDEXERS_PARAM = {INDEXER_TVDBV2: 'tvdbid', INDEXER_TVMAZE: 'tvmazeid', INDEXER_TMDB: 'tmdbid'}
 
@@ -55,6 +63,10 @@ class TorznabProvider(TorrentProvider):
         self.enable_daily = enable_daily
         self.enable_backlog = enable_backlog
         self.enable_manualsearch = enable_manualsearch
+        self.smart_backlog = False
+        self.backlog_series_search = SeriesSearch()
+        self._backlog_caps = None
+        self._backlog_session = None
 
         # For now apply the additional season search string for all torznab providers.
         # If we want to limited this per provider, I suggest using a dict, with provider: [list of season templates]
@@ -72,6 +84,117 @@ class TorznabProvider(TorrentProvider):
         self.id_manager = self.name
 
         self.cache = tv.Cache(self)
+
+    def to_json(self):
+        """Expose the optional strategy in the existing backlog settings."""
+        data = super().to_json()
+        data['config']['search']['backlog']['smartSeriesSearch'] = self.smart_backlog
+        return data
+
+    def _backlog_xml(self, params):
+        """Request and validate XML without treating an RSS feed as completion."""
+        if self._backlog_session is None:
+            self._backlog_session = ProviderSession(log_url=False)
+            self._backlog_session.headers.update(self.headers)
+        try:
+            response = self._backlog_session.get(urljoin(self.url, 'api'), params=params, raise_request_errors=True,
+                                                 allow_redirects=False)
+        except HTTPError as error:
+            response = error.response
+        except Timeout:
+            return None, 'timed_out'
+        except RequestException:
+            return None, 'failed'
+        if response is None:
+            return None, 'transport_failure'
+        if response.status_code in (401, 403):
+            return None, 'authentication_failed'
+        if response.status_code != 200:
+            return None, 'failed'
+        if '<!DOCTYPE' in response.text.upper():
+            return None, 'failed'
+        try:
+            root = ElementTree.fromstring(response.text)
+        except ElementTree.ParseError:
+            return None, 'failed'
+        error = next(root.iter('error'), None)
+        if error is not None:
+            return None, 'authentication_failed' if error.get('code') in ('100', '101', '102') else 'failed'
+        return (root, response.text), None
+
+    def _backlog_search_limit(self):
+        """Return the advertised free-text page size and capability outcome."""
+        identity = self.url, self.api_key
+        if self._backlog_caps and self._backlog_caps[0] == identity:
+            return self._backlog_caps[1], None, 0
+        if not self._check_auth():
+            return 0, 'authentication_failed', 0
+        document, error = self._backlog_xml({'t': 'caps', 'apikey': self.api_key})
+        if error or document[0].tag != 'caps':
+            return 0, error or 'failed', 1
+        root, _ = document
+        search = root.find('searching/search')
+        limit = 0
+        if search is not None and search.get('available') == 'yes' and 'q' in {
+            param.strip() for param in search.get('supportedParams', '').split(',')
+        }:
+            limits = root.find('limits')
+            try:
+                limit = max(1, min(100, int(limits.get('max', 100)))) if limits is not None else 100
+            except ValueError:
+                limit = 100
+        self._backlog_caps = identity, limit
+        return limit, None, 1
+
+    def search_backlog_title(self, query):
+        """Retrieve bounded pages while the feed confirms the offset contract."""
+        if not query.strip():
+            return [], 'failed', 0
+        limit, error, requests = self._backlog_search_limit()
+        if not limit:
+            return [], error or 'unsupported', requests
+        items = []
+        seen = set()
+        offset = 0
+        expected_total = None
+        for _ in range(MAX_BACKLOG_PAGES):
+            params = {'apikey': self.api_key, 'cat': ','.join(self.cat_ids), 't': 'search',
+                      'q': query, 'limit': limit, 'offset': offset}
+            document, error = self._backlog_xml(params)
+            requests += 1
+            if error:
+                return items, 'partial' if items else error, requests
+            root, xml = document
+            channel = root.find('channel') if root.tag == 'rss' else None
+            if channel is None:
+                return items, 'partial' if items else 'failed', requests
+            raw_items = channel.findall('item')
+            log.debug('Smart backlog {provider}: offset {offset}, limit {limit}, {items} feed items',
+                      provider=self.get_id(), offset=offset, limit=limit, items=len(raw_items))
+            page = frozenset((item.findtext('guid'), item.findtext('title'),
+                              item.findtext('link')) for item in raw_items)
+            if page in seen:
+                return items, 'partial', requests
+            seen.add(page)
+            metadata = next((node for node in channel if node.tag in RESPONSE_TAGS), None)
+            if metadata is None:
+                items.extend(self.parse(xml, 'RSS'))
+                return items, 'unknown' if not offset else 'partial', requests
+            try:
+                reported_offset = int(metadata.get('offset', ''))
+                total = int(metadata.get('total', ''))
+            except ValueError:
+                return items, 'partial', requests
+            if reported_offset != offset or total < offset or (expected_total is not None and expected_total != total):
+                return items, 'partial', requests
+            if bool(raw_items) != (total > offset):
+                return items, 'partial', requests
+            expected_total = total
+            items.extend(self.parse(xml, 'RSS'))
+            if offset + limit >= total:
+                return items, 'unknown', requests
+            offset += limit
+        return items, 'partial_budget_exhausted', requests
 
     def search(self, search_strings, age=0, ep_obj=None, force_query=False, manual_search=False, **kwargs):
         """

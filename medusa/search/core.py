@@ -50,6 +50,7 @@ from medusa.helpers import chmod_as_parent
 from medusa.helpers.utils import to_timestamp
 from medusa.logger.adapters.style import CustomBraceAdapter
 from medusa.network_timezones import app_timezone
+from medusa.search import smart_backlog
 from medusa.show import naming
 
 from six import iteritems, itervalues
@@ -649,7 +650,7 @@ def delay_search(best_result):
 
 
 def search_providers(series_obj, episodes, forced_search=False, down_cur_quality=False,
-                     manual_search=False, manual_search_type=u'episode'):
+                     manual_search=False, manual_search_type=u'episode', backlog_from_date=None):
     """
     Walk providers for information on shows.
 
@@ -659,6 +660,7 @@ def search_providers(series_obj, episodes, forced_search=False, down_cur_quality
     :param down_cur_quality: Boolean, should we re-download currently available quality file
     :param manual_search: Boolean, should we choose what to download?
     :param manual_search_type: Episode or Season search
+    :param backlog_from_date: Scheduler cutoff for evaluating eligibility across the series
     :return: results for search
     """
     found_results = {}
@@ -694,6 +696,15 @@ def search_providers(series_obj, episodes, forced_search=False, down_cur_quality
             continue
 
         found_results[cur_provider.name] = {}
+        if backlog_from_date is not None and not (manual_search or forced_search) and getattr(cur_provider, 'smart_backlog', False):
+            smart_results = smart_backlog.search_segment(cur_provider, series_obj, episodes, filter_results, backlog_from_date)
+            if smart_results is not None:
+                found_results = list_results_for_provider(smart_results, found_results, cur_provider)
+                multi_results, single_results = collect_candidates(
+                    found_results, cur_provider, multi_results, single_results
+                )
+                continue
+
         search_count = 0
         search_mode = cur_provider.search_mode
 

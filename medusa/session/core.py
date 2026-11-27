@@ -71,7 +71,7 @@ class MedusaSession(BaseSession):
 
         return False
 
-    def __init__(self, proxies=None, **kwargs):
+    def __init__(self, proxies=None, log_url=True, **kwargs):
         """Create base Medusa session instance."""
         # Add response hooks
         self.my_hooks = kwargs.pop('hooks', [])
@@ -90,7 +90,8 @@ class MedusaSession(BaseSession):
             factory.add_cache_control(self, cache_control)
 
         # Configure global session hooks
-        self.hooks['response'].append(hooks.log_url)
+        if log_url:
+            self.hooks['response'].append(hooks.log_url)
 
         # Extend the hooks with kwargs provided session hooks
         self.hooks['response'].extend(self.my_hooks)
@@ -175,7 +176,8 @@ class MedusaSafeSession(MedusaSession):
         """Initialize request.session."""
         super(MedusaSafeSession, self).__init__(**kwargs)
 
-    def request(self, method, url, data=None, params=None, headers=None, timeout=30, verify=True, **kwargs):
+    def request(self, method, url, data=None, params=None, headers=None, timeout=30, verify=True,
+                raise_request_errors=False, **kwargs):
         """Overwrite request, for adding basic exception handling."""
         resp = None
         try:
@@ -183,13 +185,19 @@ class MedusaSafeSession(MedusaSession):
                                                           timeout=timeout, verify=verify, **kwargs)
             resp.raise_for_status()
         except requests.exceptions.HTTPError as error:
+            if raise_request_errors:
+                raise
             log.debug(u'The response returned a non-200 response while requesting url {url} Error: {err_msg!r}',
                       url=url, err_msg=error)
             return resp or error.response
         except requests.exceptions.RequestException as error:
+            if raise_request_errors:
+                raise
             log.debug(u'Error requesting url {url} Error: {err_msg}', url=url, err_msg=error)
             return resp or error.response
         except Exception as error:
+            if raise_request_errors:
+                raise
             if ((isinstance(error, collections_abc.Iterable) and u'ECONNRESET' in error)
                     or (hasattr(error, u'errno') and error.errno == errno.ECONNRESET)):
                 log.warning(

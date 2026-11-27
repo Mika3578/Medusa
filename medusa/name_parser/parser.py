@@ -36,7 +36,7 @@ class NameParser(object):
     """Responsible to parse release names."""
 
     def __init__(self, series=None, try_indexers=False, naming_pattern=False, parse_method=None,
-                 allow_multi_season=False):
+                 allow_multi_season=False, local_air_dates_only=False):
         """Initialize the class.
 
         :param series:
@@ -49,11 +49,13 @@ class NameParser(object):
         :type parse_method: str or None
         :param allow_multi_season:
         :type allow_multi_season: bool
+        :param local_air_dates_only: Require an unambiguous library match for air dates.
         """
         self.series = series
         self.try_indexers = try_indexers
         self.naming_pattern = naming_pattern
         self.allow_multi_season = allow_multi_season
+        self.local_air_dates_only = local_air_dates_only
         self.show_type = parse_method or ('anime' if series and series.is_anime else 'normal')
 
     @staticmethod
@@ -82,6 +84,11 @@ class NameParser(object):
         new_season_numbers = []
 
         episode_by_air_date = self._get_episodes_by_air_date(result)
+        if self.local_air_dates_only:
+            regular_episodes = [row for row in episode_by_air_date if int(row['season']) != 0]
+            episode_by_air_date = regular_episodes or episode_by_air_date
+            if len(episode_by_air_date) != 1:
+                raise InvalidNameException('Air date does not uniquely identify a library episode')
 
         season_number = None
         episode_numbers = []

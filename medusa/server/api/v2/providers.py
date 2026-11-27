@@ -500,6 +500,10 @@ class ProvidersHandler(BaseRequestHandler):
 
     @staticmethod
     def _set_torrent_settings(provider, config):
+        if isinstance(provider, TorznabProvider):
+            value = config.get('search', {}).get('backlog', {}).get('smartSeriesSearch')
+            if isinstance(value, bool):
+                provider.smart_backlog = value
 
         if hasattr(provider, 'custom_url'):
             try:

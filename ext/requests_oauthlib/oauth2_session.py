@@ -561,7 +561,9 @@ class OAuth2Session(requests.Session):
                     raise
 
         log.debug("Requesting url %s using method %s.", url, method)
-        log.debug("Supplying headers %s and data %s", headers, data)
+        # The data argument can carry OAuth credentials (for example a password grant body);
+        # do not log it.
+        log.debug("Supplying headers %s", headers)
         log.debug("Passing through key word arguments %s.", kwargs)
         return super(OAuth2Session, self).request(
             method, url, headers=headers, data=data, files=files, **kwargs

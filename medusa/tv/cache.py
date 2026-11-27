@@ -391,7 +391,7 @@ class Cache(object):
 
         return True
 
-    def add_cache_entry(self, search_result, parsed_result=None):
+    def add_cache_entry(self, search_result, parsed_result=None, log_url=True):
         """Add item into cache database."""
         if parsed_result is None:
             try:
@@ -442,7 +442,10 @@ class Cache(object):
             pubdate = search_result.pubdate
 
             if not self.item_in_cache(identifier):
-                log.debug('Added item: {0} to cache: {1} with url: {2}', name, self.provider_id, url)
+                if log_url:
+                    log.debug('Added item: {0} to cache: {1} with url: {2}', name, self.provider_id, url)
+                else:
+                    log.debug('Added item: {0} to cache: {1}', name, self.provider_id)
                 return [
                     'INSERT INTO [{name}] '
                     '   (identifier, name, season, episodes, indexerid, url, time, quality, '
