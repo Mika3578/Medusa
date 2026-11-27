@@ -6,28 +6,8 @@ import re
 import sys
 
 from setuptools import setup
-from setuptools.command.test import test as TestCommand
 
 here = os.path.abspath(os.path.dirname(__file__))
-
-
-class PyTest(TestCommand):
-    user_options = [('pytest-args=', 'a', 'Arguments to pass into py.test')]
-
-    def initialize_options(self):
-        TestCommand.initialize_options(self)
-        self.pytest_args = []
-
-    def finalize_options(self):
-        TestCommand.finalize_options(self)
-        self.test_args = []
-        self.test_suite = True
-
-    def run_tests(self):
-        import pytest
-
-        errno = pytest.main(self.pytest_args.split(' '))
-        sys.exit(errno)
 
 
 def get_app_version():
@@ -45,11 +25,6 @@ def get_app_version():
 
 with open(os.path.join(here, 'README.md'), encoding='utf-8') as readme_file:
     long_description = readme_file.read()
-
-
-def test_install_requires():
-    with open(os.path.join(here, 'test_requirements.txt'), 'r') as r:
-        return r.read().splitlines(keepends=False)
 
 
 def packages():
@@ -88,8 +63,6 @@ setup(
             'medusa = medusa.__main__:main'
         ]
     },
-    cmdclass={'test': PyTest},
-    tests_require=test_install_requires(),
     classifiers=[
         'Development Status :: 4 - Beta',
         'Intended Audience :: End Users/Desktop',
