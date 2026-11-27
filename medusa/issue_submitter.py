@@ -84,7 +84,12 @@ class IssueSubmitter(object):
     def create_issue_data(logline, log_url):
         """Create the issue data expected by github api to be submitted."""
         try:
-            locale_name = locale.getdefaultlocale()[1]
+            # locale.getencoding() is available since Python 3.11 and replaces
+            # the deprecated locale.getdefaultlocale()[1].
+            if hasattr(locale, 'getencoding'):
+                locale_name = locale.getencoding()
+            else:
+                locale_name = locale.getpreferredencoding(False)
         except ValueError:
             locale_name = 'unknown'
 

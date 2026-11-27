@@ -26,6 +26,7 @@ from os.path import join
 
 from medusa import app, db, helpers
 from medusa.cache import recommended_series_cache
+from medusa.helper.common import dateTimeFormat
 from medusa.helpers import ensure_list
 from medusa.helpers.externals import load_externals_from_db, save_externals_to_db, show_in_library
 from medusa.imdb import Imdb
@@ -217,7 +218,7 @@ class RecommendedShow(BasePopular):
                 '     image_src, subcat, added, genres, plot) '
                 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                 [self.source, self.series_id, self.mapped_indexer, self.mapped_series_id, self.title, self.rating, self.votes,
-                 int(self.is_anime), self.image_href, self.image_src, self.subcat, datetime.now(), ','.join(self.genres), self.plot]
+                 int(self.is_anime), self.image_href, self.image_src, self.subcat, datetime.now().strftime(dateTimeFormat), ','.join(self.genres), self.plot]
             )
         else:
             query = """UPDATE shows SET title = ?, rating = ?, votes = ?,

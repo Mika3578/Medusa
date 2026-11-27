@@ -7,7 +7,7 @@ import locale
 import logging
 import re
 from collections import OrderedDict
-from datetime import datetime
+from datetime import datetime, timezone
 from itertools import chain
 from time import time
 from urllib.parse import urlsplit
@@ -721,7 +721,8 @@ class Imdb(BaseIndexer):
             return minimum_interval
 
         # season is finished, or show has ended. So let's calculate using the delta divided by 50.
-        interval = int((datetime.combine(date_season_last, datetime.min.time()) - datetime.utcfromtimestamp(0)).total_seconds() / 50)
+        epoch = datetime.fromtimestamp(0, timezone.utc).replace(tzinfo=None)
+        interval = int((datetime.combine(date_season_last, datetime.min.time()) - epoch).total_seconds() / 50)
 
         return max(minimum_interval, interval)
 

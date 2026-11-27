@@ -192,14 +192,14 @@ def get_provider_cache_results(series_obj, show_all_results=None, perform_search
     main_db_con = db.DBConnection('cache.db')
 
     provider_results = {'last_prov_updates': {}, 'error': {}, 'found_items': []}
-    original_thread_name = threading.currentThread().name
+    original_thread_name = threading.current_thread().name
 
     cached_results_total = []
     combined_sql_q = []
     combined_sql_params = []
 
     for cur_provider in enabled_providers('manualsearch'):
-        threading.currentThread().name = '{thread} :: [{provider}]'.format(thread=original_thread_name, provider=cur_provider.name)
+        threading.current_thread().name = '{thread} :: [{provider}]'.format(thread=original_thread_name, provider=cur_provider.name)
 
         # Let's check if this provider table already exists
         table_exists = main_db_con.select(
@@ -296,7 +296,7 @@ def get_provider_cache_results(series_obj, show_all_results=None, perform_search
         time.sleep(cpu_presets[app.CPU_PRESET])
     else:
         for i in cached_results_total:
-            threading.currentThread().name = '{thread} :: [{provider}]'.format(
+            threading.current_thread().name = '{thread} :: [{provider}]'.format(
                 thread=original_thread_name, provider=i['provider'])
 
             i['quality_name'] = Quality.split_quality(int(i['quality']))
@@ -344,7 +344,7 @@ def get_provider_cache_results(series_obj, show_all_results=None, perform_search
         provider_results['found_items'] = cached_results_total
 
     # Remove provider from thread name before return results
-    threading.currentThread().name = original_thread_name
+    threading.current_thread().name = original_thread_name
 
     # Sanitize the last_prov_updates key
     provider_results['last_prov_updates'] = json.dumps(provider_results['last_prov_updates'])

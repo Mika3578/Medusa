@@ -55,7 +55,7 @@ class BacklogSearcher(object):
         self._to_json = {
             'identifier': str(uuid4()),
             'name': 'BACKLOG',
-            'queueTime': str(datetime.datetime.utcnow()),
+            'queueTime': str(datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)),
             'force': self.forced
         }
 
