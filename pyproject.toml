@@ -3,7 +3,7 @@ name = "medusa"
 version = "1.0.27"
 description = "Automatic Video Library Manager for TV Shows"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "adba",
     "appdirs==1.4.4",
@@ -12,7 +12,7 @@ dependencies = [
     "beautifulsoup4==4.14.2",
     "bencode-py==4.0.0",
     "cachecontrol==0.14.3",
-    "certifi==2025.10.5",
+    "certifi==2026.11.20",
     "cloudscraper==1.2.71",
     "configobj==5.0.9",
     "contextlib2==21.6.0",
@@ -29,7 +29,7 @@ dependencies = [
     "packaging==25.0",
     "profilehooks==1.13.0",
     "pygithub==1.53",
-    "pyjwt==2.10.1",
+    "pyjwt==2.15.1",
     "pymediainfo==7.0.1",
     "python-dateutil==2.9.0.post0",
     "python-twitter==3.5",
@@ -38,17 +38,17 @@ dependencies = [
     "pyyaml==6.0.3",
     "rarfile==4.2",
     "rebulk==6.0.1",
-    "requests==2.32.5",
+    "requests==2.34.2",
     "requests-oauthlib==2.0.0",
     "requests-toolbelt==1.0.0",
     "six==1.17.0",
     "subliminal==2.2.1",
     "tmdbsimple==2.9.1",
-    "tornado==6.5.8",
+    "tornado==6.6.1",
     "tornroutes==0.5.1",
     "ttl-cache==1.6",
     "tvdbapiv2",
-    "urllib3==2.7.0",
+    "urllib3==2.8.0",
     "validators==0.35.0",
 ]
 
