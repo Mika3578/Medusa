@@ -276,12 +276,63 @@ class NameParser(object):
         return new_episode_numbers, new_season_numbers, new_absolute_numbers
 
     @staticmethod
+    def _resolve_seasonless_numbers(result):
+        """
+        Resolve season-less episode numbers through the series' absolute numbering.
+
+        Releases without a season token (e.g. ED2K-style ``Show 14``) usually use show-level numbering.
+        Each number is looked up in the custom scene numbering, XEM and the stored indexer absolute numbers.
+
+        :param result: Guessit parse result object.
+        :return: tuple of indexer episode numbers, indexer season numbers and absolute numbers,
+            or None when at least one number has no mapping.
+        :raises InvalidNameException: when a number maps to several episodes, or its mapping
+            does not lead to a library episode.
+        """
+        absolute_numbers = result.ab_episode_numbers or result.episode_numbers
+
+        # Check every number for ambiguity before applying the no-mapping fallback,
+        # so a number without mapping cannot hide an ambiguous one in a multi-episode release.
+        candidates_by_number = []
+        for absolute_number in absolute_numbers:
+            candidates = scene_numbering.get_indexer_numbering_candidates(result.series, absolute_number)
+            if candidates is not None and len(candidates) != 1:
+                raise InvalidNameException(
+                    'Season-less number {number} of {result_name} maps to {count} episodes of {series}, '
+                    'refusing to guess: {episodes}'.format(
+                        number=absolute_number, result_name=result.original_name, count=len(candidates),
+                        series=result.series.name,
+                        episodes=', '.join(episode_num(season, episode) for season, episode in candidates)
+                    )
+                )
+            candidates_by_number.append(candidates)
+
+        if any(candidates is None for candidates in candidates_by_number):
+            return None
+
+        new_season_numbers = [candidates[0][0] for candidates in candidates_by_number]
+        new_episode_numbers = [candidates[0][1] for candidates in candidates_by_number]
+
+        log.debug(
+            'Series {name} resolved season-less numbers {absolute} using absolute numbering: {ep}',
+            {'name': result.series.name, 'absolute': absolute_numbers,
+             'ep': episode_num(new_season_numbers[0], new_episode_numbers[0])}
+        )
+        return new_episode_numbers, new_season_numbers, list(result.ab_episode_numbers)
+
+    @staticmethod
     def _parse_series(result):
         new_episode_numbers = []
         new_season_numbers = []
         new_absolute_numbers = []
 
         ex_season = scene_exceptions.get_season_from_name(result.series, result.series_name) or result.season_number
+
+        if ex_season is None and (result.episode_numbers or result.ab_episode_numbers):
+            resolved = NameParser._resolve_seasonless_numbers(result)
+            if resolved:
+                return resolved
+
         if ex_season is None:
             ex_season = 1
             log.info(
@@ -289,8 +340,10 @@ class NameParser(object):
                 {'name': result.series.name}
             )
 
-        if result.episode_numbers:
-            for episode_number in result.episode_numbers:
+        # Guessit may only return an absolute_episode for season-less releases.
+        episode_numbers = result.episode_numbers or result.ab_episode_numbers
+        if episode_numbers:
+            for episode_number in episode_numbers:
                 season = ex_season
                 episode = episode_number
 
@@ -379,7 +432,7 @@ class NameParser(object):
         elif result.series.air_by_date and result.is_air_by_date:
             new_episode_numbers, new_season_numbers = self._parse_air_by_date(result)
 
-        elif result.series.is_anime or result.is_anime:
+        elif result.series.is_anime:
             new_episode_numbers, new_season_numbers, new_absolute_numbers = self._parse_anime(result)
 
         else:
