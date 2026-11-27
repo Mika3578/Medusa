@@ -120,7 +120,7 @@ class BacklogSearcher(object):
                 self.currentSearchInfo = {'title': '{series_name} Season {season}'.format(series_name=series_obj.name,
                                                                                           season=season)}
 
-                backlog_queue_item = BacklogQueueItem(series_obj, segment)
+                backlog_queue_item = BacklogQueueItem(series_obj, segment, backlog_from_date=from_date)
                 app.search_queue_scheduler.action.add_item(backlog_queue_item)  # @UndefinedVariable
 
             if not segments:

@@ -22,7 +22,7 @@ from medusa.helpers import pretty_file_size
 from medusa.logger.adapters.style import BraceAdapter
 from medusa.name_parser.parser import InvalidNameException, InvalidShowException, NameParser
 from medusa.queues import generic_queue
-from medusa.search import BACKLOG_SEARCH, DAILY_SEARCH, FAILED_SEARCH, MANUAL_SEARCH, PROPER_SEARCH, SNATCH_RESULT, SearchType
+from medusa.search import BACKLOG_SEARCH, DAILY_SEARCH, FAILED_SEARCH, MANUAL_SEARCH, PROPER_SEARCH, SNATCH_RESULT, SearchType, smart_backlog
 from medusa.search.core import (
     filter_results,
     pick_result,
@@ -253,13 +253,29 @@ class SnatchQueue(generic_queue.GenericQueue):
 
     def add_item(self, item):
         """
-        Add a SnatchQueueItem queue item.
+        Add a SnatchQueueItem and return it if accepted.
 
-        @param item: SnatchQueueItem gueue object
+        @param item: SnatchQueueItem queue object
         """
+        result = item.search_result
+        if getattr(result, 'smart_backlog', False):
+            key = smart_backlog.content_key(result)
+            with self.lock:
+                pending = self.queue + ([self.current_item] if self.current_item else [])
+                if any(smart_backlog.content_key(job.search_result) == key
+                       or (job.show == item.show and any(ep in job.segment for ep in item.segment))
+                       for job in pending):
+                    log.debug('Skipping smart backlog result already represented in the snatch queue')
+                    return
+                if any(job.success and smart_backlog.content_key(job.search_result) == key for job in self.history):
+                    log.debug('Skipping smart backlog content already snatched by this queue')
+                    return
+                item.added = datetime.datetime.utcnow()
+                self.queue.append(item)
+            return item
         if not self.is_in_queue(item.show, item.segment):
             # backlog searches
-            generic_queue.GenericQueue.add_item(self, item)
+            return generic_queue.GenericQueue.add_item(self, item)
         else:
             log.debug("Not adding item, it's already in the queue")
 
@@ -484,6 +500,11 @@ class SnatchQueueItem(generic_queue.QueueItem):
         result = self.search_result
 
         try:
+            if getattr(result, 'smart_backlog', False) and not smart_backlog.eligible_result(result):
+                self.success = False
+                self.finish()
+                return
+
             log.info('Beginning to snatch release: {name}',
                      {'name': result.name})
 
@@ -540,7 +561,7 @@ class SnatchQueueItem(generic_queue.QueueItem):
 class BacklogQueueItem(generic_queue.QueueItem):
     """Backlog queue item class."""
 
-    def __init__(self, show, segment):
+    def __init__(self, show, segment, backlog_from_date=None):
         """Initialize the class."""
         generic_queue.QueueItem.__init__(self, u'Backlog', BACKLOG_SEARCH)
         self.priority = generic_queue.QueuePriorities.LOW
@@ -550,6 +571,7 @@ class BacklogQueueItem(generic_queue.QueueItem):
 
         self.show = show
         self.segment = segment
+        self.backlog_from_date = backlog_from_date
 
         self.to_json.update({
             'show': self.show.to_json(),
@@ -569,10 +591,16 @@ class BacklogQueueItem(generic_queue.QueueItem):
                 # Push an update to any open Web UIs through the WebSocket
                 ws.Message('QueueItemUpdate', self.to_json).push()
 
-                search_result = search_providers(self.show, self.segment)
+                if self.backlog_from_date is None:
+                    search_result = search_providers(self.show, self.segment)
+                else:
+                    search_result = search_providers(self.show, self.segment,
+                                                     backlog_from_date=self.backlog_from_date)
 
                 if search_result:
                     for result in search_result:
+                        if not self.inProgress or self.stop.is_set():
+                            break
                         # just use the first result for now
                         if result.seeders not in (-1, None) and result.leechers not in (-1, None):
                             log.info(
@@ -601,13 +629,18 @@ class BacklogQueueItem(generic_queue.QueueItem):
                         snatch_queue_item = SnatchQueueItem(result.series, result.episodes, result)
 
                         # Add the queue item to the queue
-                        app.manual_snatch_scheduler.action.add_item(snatch_queue_item)
+                        snatch_queue = app.manual_snatch_scheduler.action
+                        if not snatch_queue.add_item(snatch_queue_item):
+                            continue
 
-                        self.success = False
-                        while snatch_queue_item.success is False:
-                            if snatch_queue_item.started and snatch_queue_item.success:
-                                self.success = True
-                            time.sleep(1)
+                        # A queued job is not in progress until its thread starts.
+                        while self.inProgress and (not snatch_queue_item.started or snatch_queue_item.inProgress):
+                            if self.stop.wait(1):
+                                break
+                        if snatch_queue_item.success:
+                            self.success = True
+                        if not self.inProgress or self.stop.is_set():
+                            break
 
                         # give the CPU a break
                         time.sleep(common.cpu_presets[app.CPU_PRESET])

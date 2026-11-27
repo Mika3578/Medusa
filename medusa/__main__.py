@@ -1196,6 +1196,7 @@ class Application(object):
                     load_provider_setting(app.CFG, provider, 'string', 'url', '', censor_log='normal')
                     load_provider_setting(app.CFG, provider, 'list', 'cat_ids', '', split_value=',')
                     load_provider_setting(app.CFG, provider, 'list', 'cap_tv_search', '', split_value=',')
+                    load_provider_setting(app.CFG, provider, 'bool', 'smart_backlog', 0)
                     load_provider_setting(app.CFG, provider, 'string', 'manager', '')
                     load_provider_setting(app.CFG, provider, 'string', 'id_manager', '')
 
@@ -1832,7 +1833,7 @@ class Application(object):
                 GenericProvider.TORRENT: [
                     'custom_url', 'digest', 'hash', 'passkey', 'pin', 'pid', 'confirmed', 'ranked', 'engrelease',
                     'onlyspasearch', 'sorting', 'ratio', 'minseed', 'minleech', 'options', 'freeleech',
-                    'cat', 'subtitle', 'cookies', 'title_tag', 'cap_tv_search',
+                    'cat', 'subtitle', 'cookies', 'title_tag', 'cap_tv_search', 'smart_backlog',
                 ],
                 GenericProvider.NZB: [],
             }
