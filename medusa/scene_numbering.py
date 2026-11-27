@@ -402,6 +402,66 @@ def get_indexer_numbering(series_obj, scene_episode, scene_season=None):
     return new_sea, new_ep
 
 
+def _episodes_from_absolute_number(main_db_con, series_obj, absolute_number):
+    """Return the distinct (season, episode) tuples stored for an indexer absolute number."""
+    rows = main_db_con.select(
+        'SELECT season, episode FROM tv_episodes '
+        'WHERE indexer = ? AND showid = ? AND absolute_number = ?',
+        [series_obj.indexer, series_obj.series_id, absolute_number]
+    )
+    return {(int(row['season']), int(row['episode']))
+            for row in rows if row['season'] is not None and row['episode'] is not None}
+
+
+def get_indexer_numbering_candidates(series_obj, scene_absolute_number):
+    """Find every library episode a season-less (show-level) number can map to.
+
+    Sources are tried in the same order as get_indexer_numbering() without a season:
+    custom scene numbering, XEM (scene shows only) and the stored indexer absolute numbers.
+    The first source holding a mapping for the number decides. All distinct episodes it maps to are
+    returned, so callers can reject ambiguous numbers instead of picking one arbitrarily.
+
+    :param series_obj: Show object
+    :param scene_absolute_number: Season-less episode number parsed from a release
+    :return: sorted list of (season, episode) tuples, an empty list when a mapping exists
+        but does not lead to a library episode, or None when no source has a mapping.
+    """
+    # 0 is the default for unknown absolute numbers and never identifies a single episode.
+    if scene_absolute_number is None or scene_absolute_number < 1:
+        return None
+
+    main_db_con = db.DBConnection()
+
+    custom_rows = main_db_con.select(
+        'SELECT season, episode, absolute_number FROM scene_numbering '
+        'WHERE indexer = ? AND indexer_id = ? AND scene_absolute_number = ?',
+        [series_obj.indexer, series_obj.series_id, scene_absolute_number]
+    )
+    if custom_rows:
+        candidates = set()
+        for row in custom_rows:
+            if row['season'] is not None and row['episode'] is not None:
+                candidates.add((int(row['season']), int(row['episode'])))
+            elif row['absolute_number'] is not None:
+                # Custom absolute mappings only store the indexer absolute number.
+                candidates.update(_episodes_from_absolute_number(main_db_con, series_obj, row['absolute_number']))
+        return sorted(candidates)
+
+    if series_obj.is_scene:
+        xem_refresh(series_obj)
+        xem_rows = main_db_con.select(
+            'SELECT season, episode FROM tv_episodes '
+            'WHERE indexer = ? AND showid = ? AND scene_absolute_number = ?',
+            [series_obj.indexer, series_obj.series_id, scene_absolute_number]
+        )
+        if xem_rows:
+            return sorted({(int(row['season']), int(row['episode']))
+                           for row in xem_rows if row['season'] is not None and row['episode'] is not None})
+
+    candidates = _episodes_from_absolute_number(main_db_con, series_obj, scene_absolute_number)
+    return sorted(candidates) if candidates else None
+
+
 def get_indexer_abs_numbering(series_obj, episode, season=None):
     """Find the absolute numbering for a show episode and season.
 
