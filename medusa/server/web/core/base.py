@@ -2,6 +2,7 @@
 
 from __future__ import unicode_literals
 
+import inspect
 import os
 import re
 import sys
@@ -250,10 +251,39 @@ class WebHandler(BaseHandler):
                 if len(value) == 1:
                     kwargs[arg] = self.get_argument(arg)
 
-            result = function(**kwargs)
+            result = function(**self.filter_route_arguments(function, kwargs))
             return result
         except Exception as e:
             exception_handler.handle(e)
+
+    @staticmethod
+    def filter_route_arguments(function, kwargs):
+        """
+        Filter the request arguments down to the arguments accepted by the route function.
+
+        Requests probing for missing routes or assets often come with query
+        arguments, like ``?rest_route=/wp-json/wp/v2/users`` or ``?phpinfo=1``,
+        which the matched route function doesn't accept. Passing those in made
+        the request fail with a ``TypeError``, logged as an error and
+        auto-reported. The unexpected arguments are dropped instead, so the
+        request for the missing route or asset is handled gracefully.
+        """
+        try:
+            parameters = inspect.signature(function).parameters
+        except (TypeError, ValueError):
+            return kwargs
+
+        if any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()):
+            return kwargs
+
+        accepted = [name for name, parameter in iteritems(parameters)
+                    if parameter.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)]
+        unexpected = [arg for arg in kwargs if arg not in accepted]
+        if unexpected:
+            logger.log(u'Dropping unexpected request arguments {unexpected} for {function!r}'.format(
+                       unexpected=unexpected, function=function), logger.DEBUG)
+
+        return dict((arg, value) for arg, value in iteritems(kwargs) if arg in accepted)
 
 
 @route('(.*)(/?)')

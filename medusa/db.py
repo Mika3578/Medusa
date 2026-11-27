@@ -128,6 +128,10 @@ class DBConnection(object):
                'database is locked' in e.args[0] or \
                'database or disk is full' in e.args[0]:
                 logger.log(u'DB error: {0!r}'.format(e), logger.WARNING)
+            elif 'duplicate column name' in e.args[0]:
+                # Expected when a column is added concurrently, e.g. by addColumn().
+                logger.log(u'DB error: {0!r}'.format(e), logger.DEBUG)
+                raise
             else:
                 logger.log(u"Query: '{0}'. Arguments: '{1}'".format(query, args))
                 logger.log(u'DB error: {0!r}'.format(e), logger.ERROR)
@@ -305,6 +309,10 @@ class DBConnection(object):
                         logger.log(u'DB error: ' + ex(e), logger.WARNING)
                         attempt += 1
                         time.sleep(1)
+                    elif 'duplicate column name' in e.args[0]:
+                        # Expected when a column is added concurrently, e.g. by addColumn().
+                        logger.log(u'DB error: ' + ex(e), logger.DEBUG)
+                        raise
                     else:
                         logger.log(u'DB error: ' + ex(e), logger.ERROR)
                         raise
@@ -428,6 +436,11 @@ class DBConnection(object):
     def addColumn(self, table, column, column_type='NUMERIC', default=0):
         """
         Adds a column to a table, default column type is NUMERIC
+
+        Tolerates a column that already exists, e.g. when it is added again by a
+        concurrent request. The column is only populated with the default value
+        when it is created here.
+
         TODO: Make this return true/false on success/failure
 
         :param table: Table to add column too
@@ -435,7 +448,21 @@ class DBConnection(object):
         :param column_type: Column type to add
         :param default: Default value for column
         """
-        self.action('ALTER TABLE [%s] ADD %s %s' % (table, column, column_type))
+        if self.hasColumn(table, column):
+            logger.log(u'Column [{column}] already exists in table [{table}]'.format(column=column, table=table),
+                       logger.DEBUG)
+            return
+
+        try:
+            self.action('ALTER TABLE [%s] ADD %s %s' % (table, column, column_type))
+        except sqlite3.OperationalError as e:
+            if 'duplicate column name' not in e.args[0]:
+                raise
+            # The column was added by a concurrent request in between the check and the alteration.
+            logger.log(u'Column [{column}] already exists in table [{table}]'.format(column=column, table=table),
+                       logger.DEBUG)
+            return
+
         self.action('UPDATE [%s] SET %s = ?' % (table, column), (default,))
 
 
@@ -501,8 +528,7 @@ class SchemaUpgrade(object):
         return column in self.connection.tableInfo(tableName)
 
     def addColumn(self, table, column, column_type='NUMERIC', default=0):
-        self.connection.action('ALTER TABLE [%s] ADD %s %s' % (table, column, column_type))
-        self.connection.action('UPDATE [%s] SET %s = ?' % (table, column), (default,))
+        self.connection.addColumn(table, column, column_type, default)
 
     def checkMajorDBVersion(self):
         return self.connection.checkDBVersion()[0]
