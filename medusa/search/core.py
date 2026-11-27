@@ -534,11 +534,11 @@ def search_for_needed_episodes(scheduler_start_time, force=False):
         )
         return []
 
-    original_thread_name = threading.currentThread().name
+    original_thread_name = threading.current_thread().name
     log.info(u'Using daily search providers')
 
     for cur_provider in providers:
-        threading.currentThread().name = u'{thread} :: [{provider}]'.format(
+        threading.current_thread().name = u'{thread} :: [{provider}]'.format(
             thread=original_thread_name, provider=cur_provider.name
         )
         cur_provider.cache.update_cache(scheduler_start_time)
@@ -546,7 +546,7 @@ def search_for_needed_episodes(scheduler_start_time, force=False):
     single_results = {}
     multi_results = []
     for cur_provider in providers:
-        threading.currentThread().name = u'{thread} :: [{provider}]'.format(
+        threading.current_thread().name = u'{thread} :: [{provider}]'.format(
             thread=original_thread_name, provider=cur_provider.name
         )
         try:
@@ -583,7 +583,7 @@ def search_for_needed_episodes(scheduler_start_time, force=False):
 
                 single_results[episode_no] = best_result
 
-    threading.currentThread().name = original_thread_name
+    threading.current_thread().name = original_thread_name
 
     return combine_results(multi_results, list(itervalues(single_results)))
 
@@ -669,7 +669,7 @@ def search_providers(series_obj, episodes, forced_search=False, down_cur_quality
     # build name cache for show
     name_cache.build_name_cache(series_obj)
 
-    original_thread_name = threading.currentThread().name
+    original_thread_name = threading.current_thread().name
 
     if manual_search:
         log.info(u'Using manual search providers')
@@ -682,10 +682,10 @@ def search_providers(series_obj, episodes, forced_search=False, down_cur_quality
         log.warning(u'No NZB/Torrent providers found or enabled in the application config for {0} searches.'
                     u' Please check your settings', 'manual' if manual_search else 'backlog')
 
-    threading.currentThread().name = original_thread_name
+    threading.current_thread().name = original_thread_name
 
     for cur_provider in providers:
-        threading.currentThread().name = '{original_thread_name} :: [{provider}]'.format(
+        threading.current_thread().name = '{original_thread_name} :: [{provider}]'.format(
             original_thread_name=original_thread_name, provider=cur_provider.name
         )
 
@@ -780,7 +780,7 @@ def search_providers(series_obj, episodes, forced_search=False, down_cur_quality
             continue
 
     # Remove provider from thread name before return results
-    threading.currentThread().name = original_thread_name
+    threading.current_thread().name = original_thread_name
 
     if manual_search:
         # If results in manual search return True, else False

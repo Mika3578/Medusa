@@ -2,7 +2,7 @@
 """Request handler for alias source."""
 from __future__ import unicode_literals
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from medusa.scene_exceptions import get_last_refresh, retrieve_exceptions
 from medusa.server.api.v2.base import BaseRequestHandler
@@ -89,7 +89,7 @@ class AliasSourceOperationHandler(BaseRequestHandler):
 
         if data['type'] == 'REFRESH':
             retrieve_exceptions(force=True, exception_type=types[identifier])
-            data['creation'] = datetime.utcnow().isoformat()[:-3] + 'Z'
+            data['creation'] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()[:-3] + 'Z'
             return self._created(data=data)
 
         return self._bad_request('Operation not supported')

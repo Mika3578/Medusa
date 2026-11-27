@@ -5,7 +5,7 @@ from __future__ import unicode_literals
 import logging
 import threading
 from builtins import object
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import cmp_to_key
 from uuid import uuid4
 
@@ -48,7 +48,7 @@ class GenericQueue(object):
         :return: item
         """
         with self.lock:
-            item.added = datetime.utcnow()
+            item.added = datetime.now(timezone.utc).replace(tzinfo=None)
             self.queue.append(item)
 
             return item
@@ -113,7 +113,7 @@ class QueueItem(threading.Thread):
         self.action_id = action_id
         self.stop = threading.Event()
         self.added = None
-        self.queue_time = datetime.utcnow()
+        self.queue_time = datetime.now(timezone.utc).replace(tzinfo=None)
         self.start_time = None
         self.success = None
         self.identifier = str(uuid4())
@@ -129,12 +129,12 @@ class QueueItem(threading.Thread):
     def run(self):
         """Implementing classes should call this."""
         self.inProgress = True
-        self.start_time = datetime.utcnow()
+        self.start_time = datetime.now(timezone.utc).replace(tzinfo=None)
 
     def finish(self):
         """Implementing Classes should call this."""
         self.inProgress = False
-        threading.currentThread().name = self.name
+        threading.current_thread().name = self.name
 
     @property
     def to_json(self):
@@ -142,7 +142,7 @@ class QueueItem(threading.Thread):
         self._to_json.update({
             'inProgress': self.inProgress,
             'startTime': str(self.start_time) if self.start_time else None,
-            'updateTime': str(datetime.utcnow()),
+            'updateTime': str(datetime.now(timezone.utc).replace(tzinfo=None)),
             'success': self.success
         })
         return self._to_json

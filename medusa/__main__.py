@@ -222,7 +222,7 @@ class Application(object):
         self.console_logging = (not hasattr(sys, 'frozen')) or (app.MY_NAME.lower().find('-console') > 0)
 
         # Rename the main thread
-        threading.currentThread().name = 'MAIN'
+        threading.current_thread().name = 'MAIN'
 
         try:
             opts, _ = getopt.getopt(
@@ -1121,7 +1121,8 @@ class Application(object):
                     pass
 
             try:
-                app.LOCALE = locale.getdefaultlocale()
+                # locale.getlocale() replaces the deprecated locale.getdefaultlocale().
+                app.LOCALE = locale.getlocale()
             except Exception:
                 app.LOCALE = None, None
 

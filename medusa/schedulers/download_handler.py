@@ -105,7 +105,7 @@ class DownloadHandler(object):
         self.amActive = False
         self.main_db_con = db.DBConnection()
         self.forced = False
-        self.queueTime = str(datetime.datetime.utcnow())
+        self.queueTime = str(datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
         self.identifier = str(uuid4())
 
     @property

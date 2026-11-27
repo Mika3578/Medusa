@@ -812,7 +812,7 @@ class ProperSearchQueueItem(generic_queue.QueueItem):
         propers = {}
 
         # For each provider get the list of propers
-        original_thread_name = threading.currentThread().name
+        original_thread_name = threading.current_thread().name
         providers = enabled_providers('backlog')
 
         search_date = datetime.datetime.today() - datetime.timedelta(days=app.PROPERS_SEARCH_DAYS)
@@ -839,8 +839,8 @@ class ProperSearchQueueItem(generic_queue.QueueItem):
 
         # Loop through the providers, and search for releases
         for cur_provider in providers:
-            threading.currentThread().name = '{thread} :: [{provider}]'.format(thread=original_thread_name,
-                                                                               provider=cur_provider.name)
+            threading.current_thread().name = '{thread} :: [{provider}]'.format(thread=original_thread_name,
+                                                                                provider=cur_provider.name)
 
             log.info('Searching for any new PROPER releases from {provider}', {'provider': cur_provider.name})
 
@@ -857,7 +857,7 @@ class ProperSearchQueueItem(generic_queue.QueueItem):
                     log.debug('Found new possible proper result: {name}', {'name': proper.name})
                     propers[name] = proper
 
-        threading.currentThread().name = original_thread_name
+        threading.current_thread().name = original_thread_name
 
         # Take the list of unique propers and get it sorted by
         sorted_propers = sorted(list(itervalues(propers)), key=operator.attrgetter('date'), reverse=True)
